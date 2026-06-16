@@ -1,11 +1,5 @@
 var data = [
   {
-    "name": "Test - Anglický jazyk",
-    "date": "15.06.2026",
-    "task": "should/shouldn't, must/mustn't, have to + inf",
-    "solution": ""
-  },
-  {
     "name": "Test - Český jazyk a literatura",
     "date": "16.06.2026",
     "task": "Velká a malá písmena",
@@ -16,12 +10,6 @@ var data = [
     "date": "16.06.2026",
     "task": "DÚ procvičuj na test z velkých a malých písmen v názvech - viz sešit, pracovní sešit, www.umimecesky - nástěnka ze 12.6. TEST V ÚTERÝ",
     "solution": ""
-  },
-  {
-    "name": "Domácí úkol - Anglický jazyk",
-    "date": "17.06.2026",
-    "task": "PS - 56/4, 57/6 - opakování na test",
-    "solution": "54/6 - vlastní odpovědi<br><br>57/6<br>1. Pablo has to make a video at school.<br>2. We have to study hard in class.<br>3. I haven't got to wake up early tomorrow.<br>4. Does Mia have to do homework every night?<br>5. Ed has got to train for the tennis match<br>6. My youngest sister doesn't have to go to school.<br>7. Do you have to wear a school uniform?"
   },
   {
     "name": "Odevzdávání učebnic",
@@ -44,7 +32,19 @@ var data = [
   {
     "name": "Akce - návštěva hasičárny",
     "date": "23.06.2026",
-    "task": "zatím žádné podrobnější informace",
+    "task": "ráno odevzdávání učebnic, úklid, projekt - hasiči",
+    "solution": ""
+  },
+  {
+    "name": "Akce - Hravé dopoledne s jazyky",
+    "date": "24.06.2026",
+    "task": "na stadionu nebo ve škole, podle počasí",
+    "solution": ""
+  },
+  {
+    "name": "Akce - sportovní den",
+    "date": "25.06.2026",
+    "task": "míčové hry, přihlašte se u kabinetu tělesné výchovy na nástěnce",
     "solution": ""
   },
   {
