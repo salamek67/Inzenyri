@@ -1,15 +1,9 @@
 var data = [
   {
-    "name": "Test - Český jazyk a literatura",
-    "date": "16.06.2026",
-    "task": "Velká a malá písmena",
-    "solution": ""
-  },
-  {
-    "name": "Domácí úkol - Český jazyk a literatura",
-    "date": "16.06.2026",
-    "task": "DÚ procvičuj na test z velkých a malých písmen v názvech - viz sešit, pracovní sešit, www.umimecesky - nástěnka ze 12.6. TEST V ÚTERÝ",
-    "solution": ""
+    "name": "Odevzdávání učebnic",
+    "date": "17.06.2026",
+    "task": "Odevzdávání učebnic 17. 6. - 18. 6. 7:30 - 7:55 do bilogické laboratoře. (musí se přinést i lístek se seznamem)<br><b>seznam je v řešení</b>",
+    "solution": "<b>Učebnice, co si necháváme:</b><br>Pravidla českého pravopisu<br>Tabulky pro ZŠ<br>Školní atlas světa<br><br><b>Učebnice, co se odevzdávají:</b><br>Český jazyk 7<br>Čítanka 7<br>Zeměpis světa 2<br>Zeměpis světa 3<br>Fyzika 7<br>Základy chemie 1<br>Přírodopis 7<br>Dějepis 7 - středověk<br>Středověk - atlas<br>Matematika 7<br>Pracovní sešit z matematiky 7 (Odvárko)<br>Výchova k občanství 7"
   },
   {
     "name": "Odevzdávání učebnic",
