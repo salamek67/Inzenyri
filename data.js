@@ -1,9 +1,9 @@
 var data = [
   {
-    "name": "Odevzdávání učebnic",
+    "name": "Domácí úkol - IKT",
     "date": "17.06.2026",
-    "task": "Odevzdávání učebnic 17. 6. - 18. 6. 7:30 - 7:55 do bilogické laboratoře. (musí se přinést i lístek se seznamem)<br><b>seznam je v řešení</b>",
-    "solution": "<b>Učebnice, co si necháváme:</b><br>Pravidla českého pravopisu<br>Tabulky pro ZŠ<br>Školní atlas světa<br><br><b>Učebnice, co se odevzdávají:</b><br>Český jazyk 7<br>Čítanka 7<br>Zeměpis světa 2<br>Zeměpis světa 3<br>Fyzika 7<br>Základy chemie 1<br>Přírodopis 7<br>Dějepis 7 - středověk<br>Středověk - atlas<br>Matematika 7<br>Pracovní sešit z matematiky 7 (Odvárko)<br>Výchova k občanství 7"
+    "task": "Nástěnka na umimeto.org",
+    "solution": ""
   },
   {
     "name": "Odevzdávání učebnic",
@@ -20,13 +20,13 @@ var data = [
   {
     "name": "Akce - Pevnost Josefov",
     "date": "22.06.2026",
-    "task": "zatím žádné podrobnější informace",
+    "task": "Exkurze do Josefova - program ideální pevnostní město<br>sraz ve škole v 8:00<br>vstupné je už zaplacené",
     "solution": ""
   },
   {
     "name": "Akce - návštěva hasičárny",
     "date": "23.06.2026",
-    "task": "ráno odevzdávání učebnic, úklid, projekt - hasiči",
+    "task": "1. a 2. hodina - třídnická práce, úklid<br>potom projektový den a návštěva hasičárny",
     "solution": ""
   },
   {
