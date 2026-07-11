@@ -53,8 +53,22 @@
             margin: 0 auto;
         }
 
+        .hero-card {
+            margin-bottom: 26px;
+            display: grid;
+            gap: 18px;
+        }
+
+        .hero-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 14px;
+        }
+
         h1 {
-            margin: 0 0 18px;
+            margin: 0;
+            flex: 1 1 420px;
             padding: 18px 24px;
             color: var(--heading);
             font-family: Georgia, "Times New Roman", serif;
@@ -70,10 +84,312 @@
         }
 
         .intro {
-            margin: 0 0 26px;
+            margin: 0;
             padding: 0 6px;
             color: var(--muted);
             line-height: 1.6;
+        }
+
+        .schedule-toggle {
+            flex: 0 0 auto;
+            min-height: 100%;
+        }
+
+        .schedule-dialog {
+            width: min(920px, calc(100vw - 28px));
+            max-height: min(82vh, 860px);
+            padding: 0;
+            color: var(--text);
+            background: transparent;
+            border: 0;
+        }
+
+        .schedule-dialog::backdrop {
+            background: rgba(61, 42, 29, 0.36);
+            backdrop-filter: blur(3px);
+        }
+
+        .schedule-panel {
+            position: relative;
+            display: grid;
+            gap: 16px;
+            padding: 20px;
+            background: linear-gradient(180deg, rgba(255, 252, 247, 0.94), rgba(247, 235, 221, 0.92));
+            border: 1px solid rgba(180, 137, 104, 0.2);
+            border-radius: calc(var(--radius) - 2px);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+        }
+
+        .schedule-panel h2 {
+            margin: 0;
+            padding-right: 40px;
+            color: var(--heading);
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: clamp(1.5rem, 2.4vw, 2.1rem);
+            line-height: 1.15;
+        }
+
+        .schedule-close {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            color: var(--muted);
+            font-size: 1.6rem;
+            line-height: 1;
+            background: rgba(176, 111, 70, 0.08);
+            border: 1px solid rgba(176, 111, 70, 0.12);
+            border-radius: 999px;
+            box-shadow: none;
+            transition: background 160ms ease, color 160ms ease;
+        }
+
+        .schedule-close:hover {
+            background: rgba(176, 111, 70, 0.18);
+            color: var(--heading);
+            box-shadow: none;
+            filter: none;
+            transform: none;
+        }
+
+        .schedule-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px 12px;
+        }
+
+        .schedule-weekbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px 12px;
+        }
+
+        .schedule-toolbar label {
+            color: var(--heading);
+            font-weight: 700;
+        }
+
+        .schedule-toolbar select {
+            min-width: 180px;
+            padding: 10px 12px;
+            color: var(--text);
+            font: inherit;
+            background: rgba(255, 250, 242, 0.96);
+            border: 1px solid rgba(176, 111, 70, 0.2);
+            border-radius: 12px;
+        }
+
+        .schedule-weekbar button {
+            min-width: 98px;
+        }
+
+        .schedule-weekbar button.is-active {
+            background: linear-gradient(180deg, #7f4d30, #5f3721);
+            box-shadow: 0 10px 24px rgba(95, 55, 33, 0.24);
+        }
+
+        .week-label {
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .schedule-list {
+            overflow-x: auto;
+        }
+
+        .schedule-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            background: rgba(255, 250, 242, 0.9);
+            border: 1px solid rgba(176, 111, 70, 0.16);
+            border-radius: 18px;
+            overflow: hidden;
+        }
+
+        .schedule-table th,
+        .schedule-table td {
+            padding: 12px 14px;
+            text-align: left;
+            vertical-align: top;
+            border-bottom: 1px solid rgba(176, 111, 70, 0.12);
+            border-right: 1px solid rgba(176, 111, 70, 0.12);
+        }
+
+        .schedule-table th {
+            color: var(--heading);
+            font-size: 0.92rem;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+            background: rgba(241, 216, 193, 0.52);
+        }
+
+        .schedule-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .schedule-table td {
+            color: var(--text);
+            padding: 4px;
+        }
+
+        .schedule-table tbody th {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            min-width: 88px;
+            background: rgba(241, 216, 193, 0.78);
+        }
+
+        .schedule-table th:last-child,
+        .schedule-table td:last-child {
+            border-right: 0;
+        }
+
+        .schedule-table tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .schedule-table tr:last-child th {
+            border-bottom: 0;
+        }
+
+        .schedule-table td.schedule-empty {
+            border: none;
+            background: transparent;
+        }
+
+        .schedule-table td.schedule-holiday {
+            padding: 18px 14px;
+            color: #1a4a7a;
+            font-weight: 700;
+            font-size: 1rem;
+            text-align: center;
+            background: rgba(60, 130, 210, 0.12);
+            border: 1px solid rgba(60, 130, 210, 0.25);
+            border-right: 0;
+        }
+
+        .schedule-table td.schedule-excursion {
+            padding: 18px 14px;
+            color: #1a5a1a;
+            font-weight: 700;
+            font-size: 1rem;
+            text-align: center;
+            background: rgba(80, 180, 80, 0.12);
+            border: 1px solid rgba(80, 180, 80, 0.25);
+            border-right: 0;
+        }
+
+        .schedule-cell-frame {
+            width: 100%;
+            aspect-ratio: 3 / 4;
+        }
+
+        .schedule-entry {
+            position: relative;
+            display: grid;
+            gap: 4px;
+            justify-items: center;
+            align-content: center;
+            text-align: center;
+            height: 100%;
+            width: 100%;
+            min-height: 0;
+            padding: 8px 8px 4px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.68);
+            border: 1px solid rgba(176, 111, 70, 0.14);
+            border-radius: 14px;
+        }
+
+        .schedule-entry.is-tight {
+            gap: 2px;
+            padding: 6px 6px 3px;
+        }
+
+        .schedule-entry.is-tight .schedule-entry-subject {
+            font-size: 0.7rem;
+            line-height: 1.02;
+        }
+
+        .schedule-entry.is-tight .schedule-entry-teacher,
+        .schedule-entry.is-tight .schedule-entry-classroom {
+            font-size: 0.58rem;
+            line-height: 0.98;
+        }
+
+        .schedule-entry.is-substitution {
+            background: rgba(214, 80, 80, 0.14);
+            border-color: rgba(214, 80, 80, 0.3);
+        }
+
+        .schedule-entry.is-excursion {
+            background: rgba(80, 180, 80, 0.14);
+            border-color: rgba(80, 180, 80, 0.3);
+        }
+
+        .schedule-entry-group {
+            position: absolute;
+            top: 3px;
+            right: 6px;
+            color: rgba(90, 60, 40, 0.72);
+            font-size: 0.66rem;
+            font-weight: 600;
+            line-height: 1.1;
+            letter-spacing: 0.04em;
+            pointer-events: none;
+        }
+
+        .schedule-entry.is-tight .schedule-entry-group {
+            font-size: 0.58rem;
+            top: 2px;
+            right: 4px;
+        }
+
+        .schedule-cell-stack {
+            display: grid;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            gap: 4px;
+        }
+
+        .schedule-entry-header {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 0 8px;
+            width: 100%;
+        }
+
+        .schedule-entry-subject {
+            color: var(--heading);
+            font-size: 0.8rem;
+            font-weight: 800;
+            line-height: 1.05;
+        }
+
+        .schedule-entry-teacher {
+            color: var(--muted);
+            font-size: 0.64rem;
+            line-height: 1;
+        }
+
+        .schedule-entry-classroom {
+            color: var(--muted);
+            font-size: 0.64rem;
+            line-height: 1;
         }
 
         #taskList {
@@ -244,8 +560,47 @@
 </head>
 <body>
     <main class="page">
-        <h1>Inženýři</h1>
-        <p class="intro">Nejlepší stránka na úkoly, testy a akce</p>
+        <section class="hero-card">
+            <div class="hero-head">
+                <h1>Inženýři</h1>
+                <button id="scheduleToggle" class="schedule-toggle" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="scheduleDialog">Rozvrh hodin</button>
+            </div>
+            <p class="intro">Nejlepší stránka na úkoly, testy a akce</p>
+            <dialog id="scheduleDialog" class="schedule-dialog" aria-labelledby="scheduleTitle">
+                <section class="schedule-panel">
+                    <button id="scheduleClose" class="schedule-close" type="button" aria-label="Zavřít rozvrh">&times;</button>
+                    <h2 id="scheduleTitle">Rozvrh hodin</h2>
+                    <div class="schedule-weekbar" role="group" aria-label="Volba týdne">
+                        <button id="weekPrev" type="button" data-week-offset="-1">Minulý týden</button>
+                        <button id="weekCurrent" type="button" data-week-offset="0">Tento týden</button>
+                        <button id="weekNext" type="button" data-week-offset="1">Příští týden</button>
+                        <div id="weekLabel" class="week-label"></div>
+                    </div>
+                    <div class="schedule-toolbar">
+                        <label for="viewAj">Aj</label>
+                        <select id="viewAj">
+                            <option value="all">Všechny</option>
+                            <option value="Aj1">Aj1</option>
+                            <option value="Aj2">Aj2</option>
+                        </select>
+                        <label for="viewTv">Tv</label>
+                        <select id="viewTv">
+                            <option value="all">Všechny</option>
+                            <option value="TvCh">TvCh</option>
+                            <option value="TvD">TvD</option>
+                        </select>
+                        <label for="viewJazyky">Jazyky</label>
+                        <select id="viewJazyky">
+                            <option value="all">Všechny</option>
+                            <option value="Šj">Šj</option>
+                            <option value="Nj">Nj</option>
+                            <option value="Fj_T">Fj_T</option>
+                        </select>
+                    </div>
+                    <div id="scheduleList" class="schedule-list" aria-live="polite"></div>
+                </section>
+            </dialog>
+        </section>
         <section id="taskList" aria-live="polite"></section>
     </main>
 
