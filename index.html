@@ -172,6 +172,17 @@
             background: rgba(40, 100, 40, 0.18);
             border-color: rgba(60, 140, 60, 0.3);
         }
+        body.dark .schedule-entry.is-free {
+            background: repeating-linear-gradient(
+                45deg,
+                rgba(80, 60, 20, 0.06),
+                rgba(80, 60, 20, 0.06) 6px,
+                rgba(80, 60, 20, 0.1) 6px,
+                rgba(80, 60, 20, 0.1) 12px
+            );
+            border-color: rgba(100, 80, 40, 0.2);
+            border-style: dashed;
+        }
         body.dark .schedule-table td.schedule-holiday {
             background: rgba(40, 90, 150, 0.12);
             border-color: rgba(60, 120, 200, 0.25);
@@ -577,6 +588,24 @@
         .schedule-entry.is-excursion {
             background: rgba(80, 180, 80, 0.14);
             border-color: rgba(80, 180, 80, 0.3);
+        }
+
+        .schedule-entry.is-free {
+            background: repeating-linear-gradient(
+                45deg,
+                rgba(176, 111, 70, 0.04),
+                rgba(176, 111, 70, 0.04) 6px,
+                rgba(176, 111, 70, 0.08) 6px,
+                rgba(176, 111, 70, 0.08) 12px
+            );
+            border-color: rgba(176, 111, 70, 0.15);
+            border-style: dashed;
+        }
+
+        .schedule-entry.is-free .schedule-entry-subject {
+            color: var(--muted);
+            font-weight: 600;
+            font-style: italic;
         }
 
         .schedule-entry-group {

@@ -14,6 +14,7 @@ TYPE_NAMES = {
     "holiday": "Prázdniny",
     "substitution": "Suplování",
     "excursion": "Exkurze/Výlet",
+    "free": "Volno",
 }
 DAY_NAMES = {
     1: "Pondělí",
@@ -606,6 +607,31 @@ def add_excursion() -> None:
     info(f"Exkurze uložena pro {Colors.BOLD}{len(dates)}{Colors.RESET}{Colors.GREEN} dny/dní.{Colors.RESET}")
 
 
+def add_free() -> None:
+    data = load_data()
+    heading("Přidat volno")
+    slot = read_schedule_slot()
+    if slot is None:
+        return
+
+    dates, hour = slot
+    group = ask("Skupina (Celá, Aj1, Aj2, TvD, TvCh, Šj, Nj, Fj_T): ") or "Celá"
+
+    for dt in dates:
+        entry = {
+            "date": format_date(dt),
+            "day": dt.weekday() + 1,
+            "hour": hour,
+            "type": "free",
+            "subject": "Volno",
+            "group": group,
+        }
+        data["schedule"].append(entry)
+
+    save_data(data)
+    info(f"Volno uloženo pro {Colors.BOLD}{len(dates)}{Colors.RESET}{Colors.GREEN} dny/dní.{Colors.RESET}")
+
+
 def delete_schedule() -> None:
     data = load_data()
     items = sort_schedule(data["schedule"])
@@ -745,6 +771,7 @@ def schedule_menu() -> None:
     print(f"  {Colors.CYAN}A{Colors.RESET} = přidat hodinu")
     print(f"  {Colors.CYAN}U{Colors.RESET} = upravit hodinu")
     print(f"  {Colors.CYAN}S{Colors.RESET} = suplování")
+    print(f"  {Colors.CYAN}V{Colors.RESET} = volno")
     print(f"  {Colors.CYAN}P{Colors.RESET} = prázdniny")
     print(f"  {Colors.CYAN}E{Colors.RESET} = exkurze/výlet")
     print(f"  {Colors.CYAN}D{Colors.RESET} = smazat hodinu")
@@ -757,6 +784,8 @@ def schedule_menu() -> None:
         edit_lesson()
     elif choice == "s":
         add_substitution()
+    elif choice == "v":
+        add_free()
     elif choice == "p":
         add_holiday()
     elif choice == "e":
