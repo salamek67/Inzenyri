@@ -64,18 +64,30 @@
         .hero-head {
             display: flex;
             flex-wrap: wrap;
-            align-items: flex-start;
+            align-items: center;
             gap: 14px;
         }
 
         #darkModeToggle {
-            padding: 10px 14px;
-            font-size: 0.9rem;
+            margin-left: auto;
+            width: 44px;
+            height: 44px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
             background: rgba(176, 111, 70, 0.1);
             color: var(--text);
             border: 1px solid var(--card-border);
-            border-radius: 12px;
-            transition: background var(--transition-speed) ease, color var(--transition-speed) ease, border-color var(--transition-speed) ease;
+            border-radius: 999px;
+            transition: background var(--transition-speed) ease, color var(--transition-speed) ease, border-color var(--transition-speed) ease, transform 160ms ease;
+            order: 2;
+        }
+
+        #darkModeToggle:hover {
+            transform: scale(1.08);
+            background: rgba(176, 111, 70, 0.18);
         }
 
         body.dark {
@@ -714,8 +726,8 @@
         <section class="hero-card">
             <div class="hero-head">
                 <h1>Inženýři</h1>
-                <button id="darkModeToggle" type="button">Dark mode</button>
                 <button id="scheduleToggle" class="schedule-toggle" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="scheduleDialog">Rozvrh hodin</button>
+                <button id="darkModeToggle" type="button" aria-label="Přepnout motiv" title="Přepnout motiv"></button>
             </div>
             <p class="intro">Nejlepší stránka na úkoly, testy a akce</p>
             <dialog id="scheduleDialog" class="schedule-dialog" aria-labelledby="scheduleTitle">

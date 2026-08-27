@@ -731,7 +731,8 @@ function applyDarkMode(enabled) {
     document.body.classList.toggle("dark", enabled);
     localStorage.setItem("darkMode", enabled ? "true" : "false");
     if (darkModeToggle) {
-        darkModeToggle.textContent = enabled ? "Light mode" : "Dark mode";
+        darkModeToggle.textContent = enabled ? "\u2600\uFE0F" : "\uD83C\uDF19";
+        darkModeToggle.setAttribute("aria-label", enabled ? "Přepnout na light mode" : "Přepnout na dark mode");
     }
 }
 
