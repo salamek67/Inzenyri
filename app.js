@@ -219,6 +219,40 @@ function dayLabel(value) {
     return DAY_LABELS[day] || String(value || "");
 }
 
+function getDayDate(dayNumber, weekOffset) {
+    const offset = weekOffset !== null && weekOffset !== undefined ? weekOffset : 0;
+    const base = startOfWeek(todayStart());
+    const weekStart = addDays(base, offset * 7);
+    return addDays(weekStart, dayNumber - 1);
+}
+
+function formatSubDate(date) {
+    const formatter = new Intl.DateTimeFormat("cs-CZ", {
+        day: "numeric",
+        month: "numeric",
+    });
+    return formatter.format(date);
+}
+
+function populateDayCell(cell, day) {
+    cell.replaceChildren();
+    cell.scope = "row";
+
+    const dayDate = getDayDate(day, selectedWeekOffset);
+    const dateStr = formatSubDate(dayDate);
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "schedule-day-name";
+    nameSpan.textContent = dayLabel(day);
+
+    const dateSpan = document.createElement("span");
+    dateSpan.className = "schedule-day-date";
+    dateSpan.textContent = dateStr;
+
+    cell.appendChild(nameSpan);
+    cell.appendChild(dateSpan);
+}
+
 function scheduleRank(value) {
     const day = Number(value);
     if (Number.isInteger(day) && day >= 1 && day <= 7) {
@@ -428,8 +462,7 @@ function createScheduleTable(entries, allEntries = entries) {
                 const type = banner.item.type || "";
                 const row = document.createElement("tr");
                 const labelCell = document.createElement("th");
-                labelCell.scope = "row";
-                labelCell.textContent = dayLabel(day);
+                populateDayCell(labelCell, day);
                 row.appendChild(labelCell);
 
                 const bannerCell = document.createElement("td");
@@ -445,8 +478,7 @@ function createScheduleTable(entries, allEntries = entries) {
         const row = document.createElement("tr");
 
         const hourCell = document.createElement("th");
-        hourCell.scope = "row";
-        hourCell.textContent = dayLabel(day);
+        populateDayCell(hourCell, day);
         row.appendChild(hourCell);
 
         for (const hour of hours) {
