@@ -28,12 +28,13 @@
         body {
             margin: 0;
             min-height: 100vh;
-            padding: 48px 20px 64px;
+            padding: 32px 20px 48px;
             color: var(--text);
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             background:
                 radial-gradient(circle at top left, rgba(255, 255, 255, 0.7), transparent 30%),
                 radial-gradient(circle at 80% 15%, rgba(214, 176, 140, 0.28), transparent 28%),
+                radial-gradient(circle at 50% 80%, rgba(176, 111, 70, 0.06), transparent 40%),
                 linear-gradient(180deg, #fbf5ec 0%, var(--bg) 56%, #f1e4d5 100%);
             transition: color var(--transition-speed) ease, background var(--transition-speed) ease;
         }
@@ -53,6 +54,13 @@
         .page {
             width: min(980px, 100%);
             margin: 0 auto;
+            padding: 24px;
+            background: linear-gradient(180deg, rgba(255, 252, 247, 0.7), rgba(247, 235, 221, 0.5));
+            border: 1px solid rgba(180, 137, 104, 0.15);
+            border-radius: calc(var(--radius) + 8px);
+            box-shadow: 0 24px 64px rgba(109, 73, 41, 0.1);
+            backdrop-filter: blur(12px);
+            transition: background var(--transition-speed) ease, border-color var(--transition-speed) ease;
         }
 
         .hero-card {
@@ -108,6 +116,7 @@
             background:
                 radial-gradient(circle at top left, rgba(60, 60, 60, 0.4), transparent 30%),
                 radial-gradient(circle at 80% 15%, rgba(80, 60, 20, 0.15), transparent 28%),
+                radial-gradient(circle at 50% 80%, rgba(80, 60, 20, 0.08), transparent 40%),
                 linear-gradient(180deg, #141414 0%, #1a1a1a 56%, #111111 100%);
         }
         body.dark::before {
@@ -121,77 +130,90 @@
         body.dark .box {
             background: var(--card);
         }
+        body.dark .schedule-panel {
+            background: linear-gradient(180deg, rgba(38, 38, 38, 0.7), rgba(30, 30, 30, 0.6));
+            border-color: rgba(80, 80, 80, 0.22);
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+        }
+        body.dark .schedule-panel h2 {
+            background: linear-gradient(180deg, rgba(50, 50, 50, 0.65), rgba(38, 38, 38, 0.45));
+            border-color: rgba(80, 80, 80, 0.18);
+        }
+        body.dark .schedule-table {
+            background: rgba(32, 32, 32, 0.55);
+            border-color: rgba(80, 80, 80, 0.18);
+        }
         body.dark .schedule-table th,
         body.dark .schedule-table tbody th {
-            background: #2a2a2a;
+            background: rgba(42, 42, 42, 0.5);
+        }
+        body.dark .schedule-toolbar,
+        body.dark .schedule-weekbar {
+            background: rgba(42, 42, 42, 0.4);
+            border-color: rgba(80, 80, 80, 0.15);
         }
         body.dark .schedule-toolbar select {
-            background: #2a2a2a;
-            border-color: #555;
+            background: rgba(42, 42, 42, 0.75);
+            border-color: rgba(80, 80, 80, 0.25);
             color: var(--text);
         }
         body.dark .schedule-toolbar label {
             color: var(--heading);
         }
         body.dark .schedule-entry {
-            background: rgba(45, 45, 45, 0.9);
-            border-color: rgba(80, 80, 80, 0.3);
+            background: rgba(45, 45, 45, 0.6);
+            border-color: rgba(80, 80, 80, 0.22);
         }
         body.dark .schedule-entry.is-substitution {
-            background: rgba(140, 40, 40, 0.2);
-            border-color: rgba(180, 60, 60, 0.35);
+            background: rgba(140, 40, 40, 0.18);
+            border-color: rgba(180, 60, 60, 0.3);
         }
         body.dark .schedule-entry.is-excursion {
-            background: rgba(40, 100, 40, 0.2);
-            border-color: rgba(60, 140, 60, 0.35);
-        }
-        body.dark .task {
-            background: rgba(45, 45, 45, 0.7);
-            border-color: rgba(80, 80, 80, 0.25);
-        }
-        body.dark .solution {
-            background: linear-gradient(180deg, rgba(50, 40, 20, 0.6), rgba(38, 38, 38, 0.9));
-            border-color: rgba(100, 80, 40, 0.3);
-        }
-        body.dark .date {
-            background: rgba(80, 60, 20, 0.2);
-            border-color: rgba(100, 80, 40, 0.25);
+            background: rgba(40, 100, 40, 0.18);
+            border-color: rgba(60, 140, 60, 0.3);
         }
         body.dark .schedule-table td.schedule-holiday {
-            background: rgba(40, 90, 150, 0.15);
-            border-color: rgba(60, 120, 200, 0.3);
+            background: rgba(40, 90, 150, 0.12);
+            border-color: rgba(60, 120, 200, 0.25);
             color: #6db3f2;
         }
         body.dark .schedule-table td.schedule-excursion {
-            background: rgba(40, 120, 40, 0.15);
-            border-color: rgba(60, 160, 60, 0.3);
+            background: rgba(40, 120, 40, 0.12);
+            border-color: rgba(60, 160, 60, 0.25);
             color: #6dd66d;
         }
+        body.dark button.schedule-close {
+            background: rgba(80, 60, 20, 0.15);
+            border-color: rgba(100, 80, 40, 0.2);
+        }
+        body.dark button.schedule-close::before {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a0a0a0' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6L6 18'/%3E%3Cpath d='M6 6l12 12'/%3E%3C/svg%3E");
+        }
+        body.dark button.schedule-close:hover {
+            background: rgba(80, 60, 20, 0.3);
+        }
+        body.dark .task {
+            background: rgba(45, 45, 45, 0.65);
+            border-color: rgba(80, 80, 80, 0.22);
+        }
+        body.dark .solution {
+            background: linear-gradient(180deg, rgba(50, 40, 20, 0.5), rgba(38, 38, 38, 0.8));
+            border-color: rgba(100, 80, 40, 0.25);
+        }
+        body.dark .date {
+            background: rgba(80, 60, 20, 0.18);
+            border-color: rgba(100, 80, 40, 0.22);
+        }
         body.dark .empty {
-            background: rgba(38, 38, 38, 0.9);
-            border-color: rgba(80, 80, 80, 0.3);
+            background: rgba(38, 38, 38, 0.85);
+            border-color: rgba(80, 80, 80, 0.25);
         }
         body.dark .schedule-entry-group {
             color: rgba(200, 180, 160, 0.7);
         }
         body.dark .schedule-weekbar button.is-active {
             background: linear-gradient(180deg, #b45309, #92400e);
-            box-shadow: 0 10px 24px rgba(180, 83, 9, 0.3);
-        }
-        body.dark .schedule-panel {
-            background: linear-gradient(180deg, rgba(38, 38, 38, 0.96), rgba(30, 30, 30, 0.94));
-            border-color: rgba(80, 80, 80, 0.25);
-        }
-        body.dark .schedule-table {
-            background: rgba(32, 32, 32, 0.9);
-            border-color: rgba(80, 80, 80, 0.2);
-        }
-        body.dark .schedule-close {
-            background: rgba(80, 60, 20, 0.15);
-            border-color: rgba(100, 80, 40, 0.2);
-        }
-        body.dark .schedule-close:hover {
-            background: rgba(80, 60, 20, 0.3);
+            box-shadow: 0 8px 20px rgba(180, 83, 9, 0.3);
         }
         body.dark h1 {
             background: linear-gradient(180deg, rgba(50, 50, 50, 0.84), rgba(38, 38, 38, 0.62));
@@ -204,6 +226,11 @@
         }
         body.dark #darkModeToggle:hover {
             background: rgba(217, 119, 6, 0.25);
+        }
+        body.dark .page {
+            background: linear-gradient(180deg, rgba(38, 38, 38, 0.6), rgba(30, 30, 30, 0.45));
+            border-color: rgba(80, 80, 80, 0.2);
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
         }
 
         h1 {
@@ -226,9 +253,15 @@
 
         .intro {
             margin: 0;
-            padding: 0 6px;
+            padding: 8px 10px;
             color: var(--muted);
             line-height: 1.6;
+            font-size: 0.95rem;
+            letter-spacing: 0.01em;
+            border-left: 3px solid var(--accent-soft);
+            border-radius: 0 8px 8px 0;
+            background: rgba(176, 111, 70, 0.04);
+            transition: background var(--transition-speed) ease, border-color var(--transition-speed) ease;
         }
 
         .schedule-toggle {
@@ -246,35 +279,42 @@
         }
 
         .schedule-dialog::backdrop {
-            background: rgba(61, 42, 29, 0.36);
-            backdrop-filter: blur(3px);
+            background: rgba(61, 42, 29, 0.4);
+            backdrop-filter: blur(8px) saturate(1.2);
         }
 
         .schedule-panel {
             position: relative;
             display: grid;
             gap: 16px;
-            padding: 20px;
-            background: linear-gradient(180deg, rgba(255, 252, 247, 0.94), rgba(247, 235, 221, 0.92));
-            border: 1px solid rgba(180, 137, 104, 0.2);
-            border-radius: calc(var(--radius) - 2px);
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+            padding: 24px;
+            background: linear-gradient(180deg, rgba(255, 252, 247, 0.75), rgba(247, 235, 221, 0.65));
+            border: 1px solid rgba(180, 137, 104, 0.18);
+            border-radius: var(--radius);
+            box-shadow:
+                0 24px 64px rgba(109, 73, 41, 0.15),
+                inset 0 1px 0 rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(14px) saturate(1.1);
             transition: background var(--transition-speed) ease, border-color var(--transition-speed) ease;
         }
 
         .schedule-panel h2 {
             margin: 0;
-            padding-right: 40px;
+            padding: 14px 50px 14px 18px;
             color: var(--heading);
             font-family: Georgia, "Times New Roman", serif;
             font-size: clamp(1.5rem, 2.4vw, 2.1rem);
             line-height: 1.15;
+            background: linear-gradient(180deg, rgba(255, 251, 244, 0.7), rgba(250, 240, 228, 0.45));
+            border: 1px solid rgba(180, 137, 104, 0.15);
+            border-radius: calc(var(--radius) - 4px);
+            backdrop-filter: blur(6px);
         }
 
-        .schedule-close {
+        button.schedule-close {
             position: absolute;
-            top: 14px;
-            right: 14px;
+            top: 18px;
+            right: 18px;
             width: 40px;
             height: 40px;
             display: flex;
@@ -282,21 +322,31 @@
             justify-content: center;
             padding: 0;
             color: var(--muted);
-            font-size: 1.6rem;
+            font-size: 0;
             line-height: 1;
             background: rgba(176, 111, 70, 0.08);
             border: 1px solid rgba(176, 111, 70, 0.12);
             border-radius: 999px;
-            box-shadow: none;
-            transition: background 160ms ease, color 160ms ease;
+            backdrop-filter: blur(4px);
+            z-index: 2;
+            transition: background 160ms ease, color 160ms ease, transform 160ms ease;
         }
 
-        .schedule-close:hover {
+        button.schedule-close::before {
+            content: "";
+            width: 18px;
+            height: 18px;
+            background: center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237b5f4c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6L6 18'/%3E%3Cpath d='M6 6l12 12'/%3E%3C/svg%3E");
+            transition: filter 160ms ease;
+        }
+
+        button.schedule-close:hover {
             background: rgba(176, 111, 70, 0.18);
-            color: var(--heading);
-            box-shadow: none;
-            filter: none;
-            transform: none;
+            transform: scale(1.06);
+        }
+
+        button.schedule-close:hover::before {
+            filter: brightness(0.7);
         }
 
         .schedule-toolbar {
@@ -304,6 +354,11 @@
             flex-wrap: wrap;
             align-items: center;
             gap: 10px 12px;
+            padding: 10px 14px;
+            background: rgba(255, 250, 242, 0.45);
+            border: 1px solid rgba(176, 111, 70, 0.1);
+            border-radius: 16px;
+            backdrop-filter: blur(6px);
         }
 
         .schedule-weekbar {
@@ -311,49 +366,66 @@
             flex-wrap: wrap;
             align-items: center;
             gap: 10px 12px;
+            padding: 10px 14px;
+            background: rgba(255, 250, 242, 0.45);
+            border: 1px solid rgba(176, 111, 70, 0.1);
+            border-radius: 16px;
+            backdrop-filter: blur(6px);
         }
 
         .schedule-toolbar label {
             color: var(--heading);
             font-weight: 700;
+            font-size: 0.88rem;
+            letter-spacing: 0.01em;
         }
 
         .schedule-toolbar select {
-            min-width: 180px;
-            padding: 10px 12px;
+            min-width: 160px;
+            padding: 8px 12px;
             color: var(--text);
             font: inherit;
-            background: rgba(255, 250, 242, 0.96);
-            border: 1px solid rgba(176, 111, 70, 0.2);
-            border-radius: 12px;
+            font-size: 0.88rem;
+            background: rgba(255, 250, 242, 0.8);
+            border: 1px solid rgba(176, 111, 70, 0.18);
+            border-radius: 10px;
+            backdrop-filter: blur(4px);
+            transition: background var(--transition-speed) ease, border-color var(--transition-speed) ease;
         }
 
         .schedule-weekbar button {
             min-width: 98px;
+            font-size: 0.85rem;
+            padding: 8px 14px;
+            border-radius: 10px;
         }
 
         .schedule-weekbar button.is-active {
             background: linear-gradient(180deg, #7f4d30, #5f3721);
-            box-shadow: 0 10px 24px rgba(95, 55, 33, 0.24);
+            box-shadow: 0 8px 20px rgba(95, 55, 33, 0.28);
         }
 
         .week-label {
             color: var(--muted);
             font-weight: 600;
+            font-size: 0.85rem;
         }
 
         .schedule-list {
             overflow-x: auto;
+            padding: 2px;
+            border-radius: 14px;
         }
 
         .schedule-table {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
-            background: rgba(255, 250, 242, 0.9);
-            border: 1px solid rgba(176, 111, 70, 0.16);
-            border-radius: 18px;
+            background: rgba(255, 250, 242, 0.5);
+            border: 1px solid rgba(176, 111, 70, 0.14);
+            border-radius: 16px;
             overflow: hidden;
+            backdrop-filter: blur(6px);
             transition: background var(--transition-speed) ease, border-color var(--transition-speed) ease;
         }
 
@@ -362,16 +434,17 @@
             padding: 12px 14px;
             text-align: left;
             vertical-align: top;
-            border-bottom: 1px solid rgba(176, 111, 70, 0.12);
-            border-right: 1px solid rgba(176, 111, 70, 0.12);
+            border-bottom: 1px solid rgba(176, 111, 70, 0.1);
+            border-right: 1px solid rgba(176, 111, 70, 0.1);
         }
 
         .schedule-table th {
             color: var(--heading);
-            font-size: 0.92rem;
+            font-size: 0.88rem;
             letter-spacing: 0.02em;
             white-space: nowrap;
-            background: rgba(241, 216, 193, 0.52);
+            background: rgba(241, 216, 193, 0.4);
+            backdrop-filter: blur(4px);
         }
 
         .schedule-table thead th {
@@ -390,7 +463,8 @@
             left: 0;
             z-index: 1;
             min-width: 88px;
-            background: rgba(241, 216, 193, 0.78);
+            background: rgba(241, 216, 193, 0.55);
+            backdrop-filter: blur(4px);
         }
 
         .schedule-day-name {
@@ -432,9 +506,10 @@
             font-weight: 700;
             font-size: 1rem;
             text-align: center;
-            background: rgba(60, 130, 210, 0.12);
-            border: 1px solid rgba(60, 130, 210, 0.25);
+            background: rgba(60, 130, 210, 0.1);
+            border: 1px solid rgba(60, 130, 210, 0.2);
             border-right: 0;
+            backdrop-filter: blur(4px);
         }
 
         .schedule-table td.schedule-excursion {
@@ -443,9 +518,10 @@
             font-weight: 700;
             font-size: 1rem;
             text-align: center;
-            background: rgba(80, 180, 80, 0.12);
-            border: 1px solid rgba(80, 180, 80, 0.25);
+            background: rgba(80, 180, 80, 0.1);
+            border: 1px solid rgba(80, 180, 80, 0.2);
             border-right: 0;
+            backdrop-filter: blur(4px);
         }
 
         .schedule-cell-frame {
@@ -465,9 +541,10 @@
             min-height: 0;
             padding: 8px 8px 4px;
             overflow: hidden;
-            background: rgba(255, 255, 255, 0.68);
-            border: 1px solid rgba(176, 111, 70, 0.14);
-            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(176, 111, 70, 0.12);
+            border-radius: 12px;
+            backdrop-filter: blur(4px);
             transition: background var(--transition-speed) ease, border-color var(--transition-speed) ease;
         }
 
@@ -702,7 +779,12 @@
 
         @media (max-width: 640px) {
             body {
-                padding: 28px 14px 44px;
+                padding: 16px 10px 32px;
+            }
+
+            .page {
+                padding: 16px;
+                border-radius: 20px;
             }
 
             h1,
@@ -732,7 +814,7 @@
             <p class="intro">Nejlepší stránka na úkoly, testy a akce</p>
             <dialog id="scheduleDialog" class="schedule-dialog" aria-labelledby="scheduleTitle">
                 <section class="schedule-panel">
-                    <button id="scheduleClose" class="schedule-close" type="button" aria-label="Zavřít rozvrh">&times;</button>
+                    <button id="scheduleClose" class="schedule-close" type="button" aria-label="Zavřít rozvrh"></button>
                     <h2 id="scheduleTitle">Rozvrh hodin</h2>
                     <div class="schedule-weekbar" role="group" aria-label="Volba týdne">
                         <button id="weekPrev" type="button" data-week-offset="-1">Minulý týden</button>
