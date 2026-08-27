@@ -627,6 +627,17 @@ function resetScheduleFilters() {
     }
 }
 
+function restoreScheduleFilters() {
+    for (const select of scheduleViewSelects) {
+        const saved = localStorage.getItem(select.id);
+        if (saved && select.querySelector(`option[value="${CSS.escape(saved)}"]`)) {
+            select.value = saved;
+        } else {
+            select.value = "all";
+        }
+    }
+}
+
 function openScheduleDialog() {
     if (!scheduleDialog) return;
 
@@ -638,7 +649,7 @@ function openScheduleDialog() {
         scheduleDialog.setAttribute("open", "");
     }
 
-    resetScheduleFilters();
+    restoreScheduleFilters();
     setWeekState(0);
     setScheduleToggleState(true);
 }
@@ -712,5 +723,38 @@ document.addEventListener("click", (event) => {
 
 });
 
+
+// LocalStorage for filters and dark mode
+const darkModeToggle = document.getElementById("darkModeToggle");
+
+function applyDarkMode(enabled) {
+    document.body.classList.toggle("dark", enabled);
+    localStorage.setItem("darkMode", enabled ? "true" : "false");
+    if (darkModeToggle) {
+        darkModeToggle.textContent = enabled ? "Light mode" : "Dark mode";
+    }
+}
+
+if (darkModeToggle) {
+    darkModeToggle.addEventListener("click", () => {
+        const isDark = document.body.classList.contains("dark");
+        applyDarkMode(!isDark);
+    });
+}
+
+applyDarkMode(localStorage.getItem("darkMode") === "true");
+
+// Load and save filters
+for (const select of scheduleViewSelects) {
+    const savedValue = localStorage.getItem(select.id);
+    if (savedValue) {
+        select.value = savedValue;
+    }
+    select.addEventListener("change", () => {
+        localStorage.setItem(select.id, select.value);
+    });
+}
+
 renderTasks();
 setWeekState(0);
+

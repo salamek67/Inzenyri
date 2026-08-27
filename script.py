@@ -36,6 +36,27 @@ WEEK_TYPE_NAMES = {
 }
 
 
+class Colors:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+
+    @classmethod
+    def disable(cls):
+        for attr in ("RESET", "BOLD", "DIM", "RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN"):
+            setattr(cls, attr, "")
+
+
+if not sys.stdout.isatty():
+    Colors.disable()
+
+
 def parse_date(value: str) -> date | None:
     raw = str(value).strip()
     if not raw:
@@ -285,19 +306,41 @@ def save_data(data: dict) -> None:
 
 
 def ask(prompt: str) -> str:
-    return input(prompt).strip()
+    return input(f"{Colors.CYAN}{prompt}{Colors.RESET} ").strip()
+
+
+def confirm(prompt: str) -> bool:
+    answer = input(f"{Colors.YELLOW}{prompt} [a/n]: {Colors.RESET} ").strip().lower()
+    return answer in ("a", "ano", "y", "yes")
+
+
+def info(msg: str) -> None:
+    print(f"{Colors.GREEN}{msg}{Colors.RESET}")
+
+
+def warn(msg: str) -> None:
+    print(f"{Colors.YELLOW}{msg}{Colors.RESET}")
+
+
+def error(msg: str) -> None:
+    print(f"{Colors.RED}{msg}{Colors.RESET}")
+
+
+def heading(msg: str) -> None:
+    print(f"\n{Colors.BOLD}{Colors.MAGENTA}── {msg} ──{Colors.RESET}")
 
 
 def add_task() -> None:
     data = load_data()
 
+    heading("Přidat úkol")
     name = ask("Název: ")
     date_value = ask("Datum (dd.mm.yyyy): ")
     task = ask("Úkol: ")
     solution = ask("Řešení: ")
 
     if parse_date(date_value) is None:
-        print("Neplatné datum.")
+        error("Neplatné datum.")
         return
 
     data["tasks"].append(
@@ -309,7 +352,7 @@ def add_task() -> None:
         }
     )
     save_data(data)
-    print("Úkol uložen.")
+    info("Úkol uložen.")
 
 
 def delete_task(index_value: str | None = None) -> None:
@@ -317,11 +360,12 @@ def delete_task(index_value: str | None = None) -> None:
     items = sort_tasks(purge_old(data["tasks"]))
 
     if not items:
-        print("Žádné úkoly k odstranění.")
+        warn("Žádné úkoly k odstranění.")
         return
 
+    heading("Smazat úkol")
     for i, item in enumerate(items):
-        print(f"{i}: {item.get('name', '')} [{item.get('date', '')}]")
+        print(f"  {Colors.CYAN}{i}{Colors.RESET}: {item.get('name', '')} [{Colors.DIM}{item.get('date', '')}{Colors.RESET}]")
 
     if index_value is None:
         index_value = ask("Smazat index: ")
@@ -329,17 +373,22 @@ def delete_task(index_value: str | None = None) -> None:
     try:
         index = int(index_value)
     except ValueError:
-        print("Index musí být číslo.")
+        error("Index musí být číslo.")
         return
 
     if index < 0 or index >= len(items):
-        print("Index je mimo rozsah.")
+        error("Index je mimo rozsah.")
+        return
+
+    target = items[index]
+    if not confirm(f"Smazat '{target.get('name', '')}' ({target.get('date', '')})?"):
+        info("Zrušeno.")
         return
 
     items.pop(index)
     data["tasks"] = items
     save_data(data)
-    print("Úkol smazán.")
+    info("Úkol smazán.")
 
 
 def purge_tasks() -> None:
@@ -347,17 +396,23 @@ def purge_tasks() -> None:
     cleaned = sort_tasks(purge_old(data["tasks"]))
     data["tasks"] = cleaned
     save_data(data)
-    print(f"Hotovo. Zůstalo {len(cleaned)} úkolů.")
+    info(f"Hotovo. Zůstalo {Colors.BOLD}{len(cleaned)}{Colors.RESET}{Colors.GREEN} úkolů.{Colors.RESET}")
 
 
 def list_tasks() -> None:
     items = sort_tasks(purge_old(load_data()["tasks"]))
     if not items:
-        print("Žádné aktuální úkoly.")
+        warn("Žádné aktuální úkoly.")
         return
 
+    heading("Aktuální úkoly")
     for i, item in enumerate(items):
-        print(f"{i}: {item.get('name', '')} | {item.get('date', '')} | {item.get('task', '')}")
+        print(
+            f"  {Colors.CYAN}{i}{Colors.RESET}: "
+            f"{Colors.BOLD}{item.get('name', '')}{Colors.RESET} | "
+            f"{Colors.DIM}{item.get('date', '')}{Colors.RESET} | "
+            f"{item.get('task', '')}"
+        )
 
 
 def schedule_item_week_type(item: dict) -> str:
@@ -400,17 +455,17 @@ def read_schedule_slot() -> tuple[list[date], int] | None:
     date_input = ask("Datum nebo rozmezí (dd.mm.yyyy nebo dd.mm.yyyy-dd.mm.yyyy): ")
     dates = parse_date_or_range(date_input)
     if not dates:
-        print("Neplatné datum nebo rozmezí.")
+        error("Neplatné datum nebo rozmezí.")
         return None
 
     hour_value = ask("Kolikátá hodina v dni: ")
     if not hour_value.isdigit():
-        print("Hodina musí být číslo.")
+        error("Hodina musí být číslo.")
         return None
 
     hour = int(hour_value)
     if hour <= 0:
-        print("Hodina musí být větší než 0.")
+        error("Hodina musí být větší než 0.")
         return None
 
     return dates, hour
@@ -418,6 +473,7 @@ def read_schedule_slot() -> tuple[list[date], int] | None:
 
 def add_lesson() -> None:
     data = load_data()
+    heading("Přidat hodinu")
     slot = read_schedule_slot()
     if slot is None:
         return
@@ -441,11 +497,12 @@ def add_lesson() -> None:
         data["schedule"].append(entry)
 
     save_data(data)
-    print(f"Uloženo pro {len(dates)} dny/dní.")
+    info(f"Uloženo pro {Colors.BOLD}{len(dates)}{Colors.RESET}{Colors.GREEN} dny/dní.{Colors.RESET}")
 
 
 def add_substitution() -> None:
     data = load_data()
+    heading("Suplování")
     slot = read_schedule_slot()
     if slot is None:
         return
@@ -456,22 +513,22 @@ def add_substitution() -> None:
         date_str = format_date(dt)
         found_items = find_schedule_slot(data["schedule"], date_str, hour)
         if not found_items:
-            print(f"Hodina dne {date_str} neexistuje, přeskakuji.")
+            warn(f"Hodina dne {date_str} neexistuje, přeskakuji.")
             continue
 
         if len(found_items) == 1:
             index, item = found_items[0]
         else:
-            print(f"V hodině dne {date_str} existuje více skupin.")
+            warn(f"V hodině dne {date_str} existuje více skupin.")
             for i, (_, item_obj) in enumerate(found_items):
                 print(
-                    f"{i}: {item_obj.get('group', 'Celá')} | "
+                    f"  {Colors.CYAN}{i}{Colors.RESET}: {item_obj.get('group', 'Celá')} | "
                     f"{item_obj.get('subject', '')} | {item_obj.get('teacher', '')} | {item_obj.get('classroom', '')}"
                 )
             group_sel = ask("Skupina pro suplování: ") or ""
             found = find_schedule_item(data["schedule"], date_str, hour, group_sel)
             if found is None:
-                print("Zadaná skupina neexistuje, přeskakuji.")
+                error("Zadaná skupina neexistuje, přeskakuji.")
                 continue
             index, item = found
 
@@ -490,15 +547,16 @@ def add_substitution() -> None:
         data["schedule"][index] = item
 
     save_data(data)
-    print("Suplování uloženo.")
+    info("Suplování uloženo.")
 
 
 def add_holiday() -> None:
     data = load_data()
+    heading("Přidat prázdniny")
     date_input = ask("Datum nebo rozmezí (dd.mm.yyyy nebo dd.mm.yyyy-dd.mm.yyyy): ")
     dates = parse_date_or_range(date_input)
     if not dates:
-        print("Neplatné datum nebo rozmezí.")
+        error("Neplatné datum nebo rozmezí.")
         return
 
     note = ask("Název (např. Jarní prázdniny): ") or "Prázdniny"
@@ -512,15 +570,16 @@ def add_holiday() -> None:
         })
 
     save_data(data)
-    print(f"Prázdniny uloženy pro {len(dates)} dny/dní.")
+    info(f"Prázdniny uloženy pro {Colors.BOLD}{len(dates)}{Colors.RESET}{Colors.GREEN} dny/dní.{Colors.RESET}")
 
 
 def add_excursion() -> None:
     data = load_data()
+    heading("Přidat exkurzi/výlet")
     date_input = ask("Datum nebo rozmezí (dd.mm.yyyy nebo dd.mm.yyyy-dd.mm.yyyy): ")
     dates = parse_date_or_range(date_input)
     if not dates:
-        print("Neplatné datum nebo rozmezí.")
+        error("Neplatné datum nebo rozmezí.")
         return
 
     hour_value = ask("Hodina (nebo Enter pro celý den): ")
@@ -538,7 +597,7 @@ def add_excursion() -> None:
         })
 
     save_data(data)
-    print(f"Exkurze uložena pro {len(dates)} dny/dní.")
+    info(f"Exkurze uložena pro {Colors.BOLD}{len(dates)}{Colors.RESET}{Colors.GREEN} dny/dní.{Colors.RESET}")
 
 
 def delete_schedule() -> None:
@@ -546,16 +605,17 @@ def delete_schedule() -> None:
     items = sort_schedule(data["schedule"])
 
     if not items:
-        print("Žádné hodiny k odstranění.")
+        warn("Žádné hodiny k odstranění.")
         return
 
+    heading("Smazat hodinu")
     for i, item in enumerate(items):
         item_type = item.get("type", "")
         type_label = TYPE_NAMES.get(item_type, "")
-        type_str = f" [{type_label}]" if type_label else ""
+        type_str = f" [{Colors.RED}{type_label}{Colors.RESET}]" if type_label else ""
         date_str = item.get("date", format_day(item.get("day", "")))
         print(
-            f"{i}: {date_str} | Hodina: {item.get('hour', '')} | "
+            f"  {Colors.CYAN}{i}{Colors.RESET}: {date_str} | Hodina: {item.get('hour', '')} | "
             f"{item.get('subject', '')}{type_str} | {item.get('classroom', '')} | "
             f"{item.get('teacher', '')} | {item.get('group', 'Celá')}"
         )
@@ -564,39 +624,53 @@ def delete_schedule() -> None:
     try:
         index = int(index_value)
     except ValueError:
-        print("Index musí být číslo.")
+        error("Index musí být číslo.")
         return
 
     if index < 0 or index >= len(items):
-        print("Index je mimo rozsah.")
+        error("Index je mimo rozsah.")
+        return
+
+    target = items[index]
+    target_type = TYPE_NAMES.get(target.get("type", ""), "")
+    label = target.get("subject", "") or target_type
+    if not confirm(f"Smazat '{label}' ({target.get('date', '')})?"):
+        info("Zrušeno.")
         return
 
     items.pop(index)
     data["schedule"] = items
     save_data(data)
-    print("Hodina smazána.")
+    info("Hodina smazána.")
 
 
 def list_schedule() -> None:
     items = sort_schedule(load_data()["schedule"])
     if not items:
-        print("Žádný rozvrh.")
+        warn("Žádný rozvrh.")
         return
 
+    heading("Rozvrh")
     for i, item in enumerate(items):
         item_type = item.get("type", "")
         type_label = TYPE_NAMES.get(item_type, "")
-        type_str = f" [{type_label}]" if type_label else ""
+        type_str = f" [{Colors.MAGENTA}{type_label}{Colors.RESET}]" if type_label else ""
         date_str = item.get("date", format_day(item.get("day", "")))
         print(
-            f"{i}: {date_str} | Hodina: {item.get('hour', '')} | "
+            f"  {Colors.CYAN}{i}{Colors.RESET}: {date_str} | Hodina: {item.get('hour', '')} | "
             f"{item.get('subject', '')}{type_str} | {item.get('classroom', '')} | "
             f"{item.get('teacher', '')} | {item.get('group', 'Celá')}"
         )
 
 
 def schedule_menu() -> None:
-    print("A = přidat hodinu, S = suplování, P = prázdniny, E = exkurze/výlet, D = smazat hodinu, L = vypsat hodiny")
+    heading("Rozvrh – menu")
+    print(f"  {Colors.CYAN}A{Colors.RESET} = přidat hodinu")
+    print(f"  {Colors.CYAN}S{Colors.RESET} = suplování")
+    print(f"  {Colors.CYAN}P{Colors.RESET} = prázdniny")
+    print(f"  {Colors.CYAN}E{Colors.RESET} = exkurze/výlet")
+    print(f"  {Colors.CYAN}D{Colors.RESET} = smazat hodinu")
+    print(f"  {Colors.CYAN}L{Colors.RESET} = vypsat hodiny")
     choice = ask("> ").lower()
 
     if choice == "a":
@@ -612,11 +686,16 @@ def schedule_menu() -> None:
     elif choice == "l":
         list_schedule()
     else:
-        print("Neznámá volba.")
+        error("Neznámá volba.")
 
 
 def menu() -> None:
-    print("A = přidat úkol, D = smazat úkol, P = promazat staré, L = vypsat úkoly, R = rozvrh")
+    heading("Inženýři – správa dat")
+    print(f"  {Colors.CYAN}A{Colors.RESET} = přidat úkol")
+    print(f"  {Colors.CYAN}D{Colors.RESET} = smazat úkol")
+    print(f"  {Colors.CYAN}P{Colors.RESET} = promazat staré")
+    print(f"  {Colors.CYAN}L{Colors.RESET} = vypsat úkoly")
+    print(f"  {Colors.CYAN}R{Colors.RESET} = rozvrh")
     choice = ask("> ").lower()
 
     if choice == "a":
@@ -630,24 +709,41 @@ def menu() -> None:
     elif choice == "r":
         schedule_menu()
     else:
-        print("Neznámá volba.")
+        error("Neznámá volba.")
 
 
 def main() -> None:
-    command = sys.argv[1].lower() if len(sys.argv) > 1 else ""
+    try:
+        command = sys.argv[1].lower() if len(sys.argv) > 1 else ""
 
-    if command in {"a", "add"}:
-        add_task()
-    elif command in {"d", "del", "delete"}:
-        delete_task(sys.argv[2] if len(sys.argv) > 2 else None)
-    elif command in {"p", "purge"}:
-        purge_tasks()
-    elif command in {"l", "list"}:
-        list_tasks()
-    elif command in {"r", "rozvrh", "schedule"}:
-        schedule_menu()
-    else:
-        menu()
+        if command in {"a", "add"}:
+            add_task()
+        elif command in {"d", "del", "delete"}:
+            delete_task(sys.argv[2] if len(sys.argv) > 2 else None)
+        elif command in {"p", "purge"}:
+            purge_tasks()
+        elif command in {"l", "list"}:
+            list_tasks()
+        elif command in {"r", "rozvrh", "schedule"}:
+            schedule_menu()
+        elif command in {"h", "help", "-h", "--help"}:
+            heading("Nápověda")
+            print("  Příkazy:")
+            print(f"    {Colors.CYAN}a{Colors.RESET} / {Colors.CYAN}add{Colors.RESET}       – přidat úkol")
+            print(f"    {Colors.CYAN}d{Colors.RESET} / {Colors.CYAN}del{Colors.RESET}       – smazat úkol (volitelně index)")
+            print(f"    {Colors.CYAN}p{Colors.RESET} / {Colors.CYAN}purge{Colors.RESET}     – promazat staré úkoly")
+            print(f"    {Colors.CYAN}l{Colors.RESET} / {Colors.CYAN}list{Colors.RESET}      – vypsat úkoly")
+            print(f"    {Colors.CYAN}r{Colors.RESET} / {Colors.CYAN}rozvrh{Colors.RESET}    – správa rozvrhu")
+            print(f"    {Colors.CYAN}h{Colors.RESET} / {Colors.CYAN}help{Colors.RESET}      – tato nápověda")
+        elif command:
+            error(f"Neznámý příkaz: {command}")
+            print(f"  Použijte {Colors.CYAN}h{Colors.RESET} pro nápovědu.")
+        else:
+            menu()
+    except KeyboardInterrupt:
+        print()
+    except EOFError:
+        pass
 
 
 if __name__ == "__main__":
