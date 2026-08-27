@@ -109,7 +109,7 @@ var data = {
       "day": 1,
       "hour": 2,
       "subject": "Cj",
-      "classroom": "",
+      "classroom": "P",
       "teacher": "Hb",
       "group": "TvCh"
     },
@@ -202,7 +202,7 @@ var data = {
       "hour": 6,
       "weekType": "both",
       "subject": "Aj",
-      "classroom": "",
+      "classroom": "Ju1",
       "teacher": "Te",
       "group": "Aj1"
     },
@@ -238,7 +238,7 @@ var data = {
       "hour": 3,
       "weekType": "both",
       "subject": "Cj",
-      "classroom": "",
+      "classroom": "P",
       "teacher": "Hb",
       "group": "Celá"
     },
@@ -266,17 +266,17 @@ var data = {
       "weekType": "both",
       "subject": "Aj",
       "classroom": "",
-      "teacher": "Te",
-      "group": "Aj1"
+      "teacher": "Hb",
+      "group": "Aj2"
     },
     {
       "day": 2,
       "hour": 7,
       "weekType": "both",
       "subject": "Aj",
-      "classroom": "",
-      "teacher": "Hb",
-      "group": "Aj2"
+      "classroom": "MU1",
+      "teacher": "Te",
+      "group": "Aj1"
     },
     {
       "day": 3,
@@ -319,7 +319,7 @@ var data = {
       "hour": 3,
       "weekType": "both",
       "subject": "Cj",
-      "classroom": "",
+      "classroom": "P",
       "teacher": "Hb",
       "group": "Celá"
     },
@@ -328,7 +328,7 @@ var data = {
       "hour": 4,
       "weekType": "both",
       "subject": "De",
-      "classroom": "",
+      "classroom": "S",
       "teacher": "Mr",
       "group": "Celá"
     },
@@ -401,17 +401,17 @@ var data = {
       "weekType": "both",
       "subject": "Aj",
       "classroom": "",
-      "teacher": "Te",
-      "group": "Aj1"
+      "teacher": "Hb",
+      "group": "Aj2"
     },
     {
       "day": 4,
       "hour": 1,
       "weekType": "both",
       "subject": "Aj",
-      "classroom": "",
-      "teacher": "Hb",
-      "group": "Aj2"
+      "classroom": "Ju3",
+      "teacher": "Te",
+      "group": "Aj1"
     },
     {
       "day": 4,
@@ -436,7 +436,7 @@ var data = {
       "hour": 4,
       "weekType": "both",
       "subject": "Ov",
-      "classroom": "",
+      "classroom": "2.B",
       "teacher": "Jk",
       "group": "Celá"
     },
@@ -463,7 +463,7 @@ var data = {
       "hour": 6,
       "weekType": "both",
       "subject": "Cj",
-      "classroom": "",
+      "classroom": "3.A",
       "teacher": "Hb",
       "group": "TvCh"
     },
@@ -562,7 +562,7 @@ var data = {
       "hour": 6,
       "weekType": "both",
       "subject": "Aj",
-      "classroom": "",
+      "classroom": "MU1",
       "teacher": "Te",
       "group": "Aj1"
     },
