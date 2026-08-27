@@ -663,9 +663,81 @@ def list_schedule() -> None:
         )
 
 
+def edit_lesson() -> None:
+    data = load_data()
+    items = sort_schedule(data["schedule"])
+
+    if not items:
+        warn("Žádné hodiny k úpravě.")
+        return
+
+    heading("Upravit hodinu")
+    for i, item in enumerate(items):
+        item_type = item.get("type", "")
+        type_label = TYPE_NAMES.get(item_type, "")
+        type_str = f" [{Colors.MAGENTA}{type_label}{Colors.RESET}]" if type_label else ""
+        date_str = item.get("date", format_day(item.get("day", "")))
+        print(
+            f"  {Colors.CYAN}{i}{Colors.RESET}: {date_str} | Hodina: {item.get('hour', '')} | "
+            f"{item.get('subject', '')}{type_str} | {item.get('classroom', '')} | "
+            f"{item.get('teacher', '')} | {item.get('group', 'Celá')}"
+        )
+
+    index_value = ask("Upravit index: ")
+    try:
+        index = int(index_value)
+    except ValueError:
+        error("Index musí být číslo.")
+        return
+
+    if index < 0 or index >= len(items):
+        error("Index je mimo rozsah.")
+        return
+
+    item = items[index]
+    original = dict(item)
+
+    print(f"\n{Colors.DIM}Aktuální hodnoty (Enter = ponechat):{Colors.RESET}")
+    print(f"  Předmět:   {item.get('subject', '')}")
+    print(f"  Učitel:    {item.get('teacher', '')}")
+    print(f"  Třída:     {item.get('classroom', '')}")
+    print(f"  Skupina:   {item.get('group', 'Celá')}")
+    print(f"  Den:       {item.get('day', '')} ({format_day(item.get('day', ''))})")
+    print(f"  Hodina:    {item.get('hour', '')}")
+
+    subject = ask(f"Nový předmět [{item.get('subject', '')}]: ")
+    teacher = ask(f"Nový učitel [{item.get('teacher', '')}]: ")
+    classroom = ask(f"Nová třída [{item.get('classroom', '')}]: ")
+    group = ask(f"Nová skupina [{item.get('group', 'Celá')}]: ")
+    day = ask(f"Nový den (1-7) [{item.get('day', '')}]: ")
+    hour = ask(f"Nová hodina [{item.get('hour', '')}]: ")
+
+    if subject:
+        item["subject"] = subject
+    if teacher:
+        item["teacher"] = teacher
+    if classroom:
+        item["classroom"] = classroom
+    if group:
+        item["group"] = group
+    if day and day.isdigit() and 1 <= int(day) <= 7:
+        item["day"] = int(day)
+    if hour and hour.isdigit() and int(hour) > 0:
+        item["hour"] = int(hour)
+
+    if item == original:
+        info("Žádné změny.")
+        return
+
+    data["schedule"] = items
+    save_data(data)
+    info("Hodina upravena.")
+
+
 def schedule_menu() -> None:
     heading("Rozvrh – menu")
     print(f"  {Colors.CYAN}A{Colors.RESET} = přidat hodinu")
+    print(f"  {Colors.CYAN}U{Colors.RESET} = upravit hodinu")
     print(f"  {Colors.CYAN}S{Colors.RESET} = suplování")
     print(f"  {Colors.CYAN}P{Colors.RESET} = prázdniny")
     print(f"  {Colors.CYAN}E{Colors.RESET} = exkurze/výlet")
@@ -675,6 +747,8 @@ def schedule_menu() -> None:
 
     if choice == "a":
         add_lesson()
+    elif choice == "u":
+        edit_lesson()
     elif choice == "s":
         add_substitution()
     elif choice == "p":
@@ -726,6 +800,8 @@ def main() -> None:
             list_tasks()
         elif command in {"r", "rozvrh", "schedule"}:
             schedule_menu()
+        elif command in {"u", "edit"}:
+            edit_lesson()
         elif command in {"h", "help", "-h", "--help"}:
             heading("Nápověda")
             print("  Příkazy:")
@@ -734,6 +810,7 @@ def main() -> None:
             print(f"    {Colors.CYAN}p{Colors.RESET} / {Colors.CYAN}purge{Colors.RESET}     – promazat staré úkoly")
             print(f"    {Colors.CYAN}l{Colors.RESET} / {Colors.CYAN}list{Colors.RESET}      – vypsat úkoly")
             print(f"    {Colors.CYAN}r{Colors.RESET} / {Colors.CYAN}rozvrh{Colors.RESET}    – správa rozvrhu")
+            print(f"    {Colors.CYAN}u{Colors.RESET} / {Colors.CYAN}edit{Colors.RESET}      – upravit hodinu v rozvrhu")
             print(f"    {Colors.CYAN}h{Colors.RESET} / {Colors.CYAN}help{Colors.RESET}      – tato nápověda")
         elif command:
             error(f"Neznámý příkaz: {command}")
