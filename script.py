@@ -254,12 +254,18 @@ def sort_tasks(items: list[dict]) -> list[dict]:
 
 def purge_old_schedule(items: list[dict]) -> list[dict]:
     current = today()
-    cutoff = current - timedelta(days=14)
+    # Start of previous week (Monday)
+    days_since_monday = current.weekday()
+    prev_week_start = current - timedelta(days=days_since_monday + 7)
     kept = []
     for item in items:
         item_date = parse_date(str(item.get("date", "")))
+        date_to = parse_date(str(item.get("dateTo", "")))
         if item_date is not None:
-            if item_date >= cutoff:
+            if item_date >= prev_week_start:
+                kept.append(item)
+        elif date_to is not None:
+            if date_to >= prev_week_start:
                 kept.append(item)
         else:
             kept.append(item)
