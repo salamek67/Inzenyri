@@ -2,29 +2,100 @@ var data = {
   "tasks": [],
   "schedule": [
     {
+      "date": "17.08.2026",
       "day": 1,
       "type": "holiday",
-      "subject": "Letní Prázdniny"
+      "subject": "Letní prázdniny"
     },
     {
+      "date": "18.08.2026",
       "day": 2,
       "type": "holiday",
-      "subject": "Letní Prázdniny"
+      "subject": "Letní prázdniny"
     },
     {
+      "date": "19.08.2026",
       "day": 3,
       "type": "holiday",
-      "subject": "Letní Prázdniny"
+      "subject": "Letní prázdniny"
     },
     {
+      "date": "20.08.2026",
       "day": 4,
       "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "21.08.2026",
+      "day": 5,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "22.08.2026",
+      "day": 6,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "23.08.2026",
+      "day": 7,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "24.08.2026",
+      "day": 1,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "25.08.2026",
+      "day": 2,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "26.08.2026",
+      "day": 3,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "27.08.2026",
+      "day": 4,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "28.08.2026",
+      "day": 5,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "29.08.2026",
+      "day": 6,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "date": "30.08.2026",
+      "day": 7,
+      "type": "holiday",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "day": 1,
+      "date": "31.08.2026",
+      "type": "holiday",
       "subject": "Letní Prázdniny"
     },
     {
-      "day": 5,
+      "date": "31.08.2026",
+      "day": 1,
       "type": "holiday",
-      "subject": "Letní Prázdniny"
+      "subject": "Letní prázdniny"
     },
     {
       "day": 1,

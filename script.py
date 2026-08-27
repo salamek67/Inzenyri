@@ -4,9 +4,8 @@ from __future__ import annotations
 import json
 import re
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
-
 
 FILE = Path(__file__).with_name("data.js")
 PREFIX = "var data = "
@@ -38,17 +37,65 @@ WEEK_TYPE_NAMES = {
 
 
 def parse_date(value: str) -> date | None:
-    try:
-        return datetime.strptime(value, "%d.%m.%Y").date()
-    except ValueError:
+    raw = str(value).strip()
+    if not raw:
         return None
+    for fmt in ("%d.%m.%Y", "%d.%m.%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            pass
+    parts = raw.split(".")
+    if len(parts) == 3:
+        try:
+            d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+            if y < 100:
+                y += 2000
+            return date(y, m, d)
+        except ValueError:
+            pass
+    return None
+
+
+def format_date(dt: date) -> str:
+    return dt.strftime("%d.%m.%Y")
+
+
+def parse_date_or_range(value: str) -> list[date] | None:
+    """Převede řetězec na seznam dat (jediné datum nebo rozmezí datum-datum)."""
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    # Kontrola rozmezí (odděleno pomlčkou nebo spojovníkem)
+    if "-" in raw and not raw.startswith("-"):
+        parts = raw.split("-")
+        if len(parts) == 2:
+            start_dt = parse_date(parts[0])
+            end_dt = parse_date(parts[1])
+            if start_dt and end_dt:
+                if start_dt > end_dt:
+                    start_dt, end_dt = end_dt, start_dt
+                dates = []
+                curr = start_dt
+                while curr <= end_dt:
+                    dates.append(curr)
+                    curr += timedelta(days=1)
+                return dates
+
+    # Samostatné datum
+    dt = parse_date(raw)
+    if dt is not None:
+        return [dt]
+
+    return None
 
 
 def parse_day(value: str) -> int | None:
     raw = str(value).strip().lower().replace(".", "")
     if raw.isdigit():
         day = int(raw)
-        if 1 <= day <= 5:
+        if 1 <= day <= 7:
             return day
 
     aliases = {
@@ -67,6 +114,11 @@ def parse_day(value: str) -> int | None:
         "pa": 5,
         "patek": 5,
         "pátek": 5,
+        "so": 6,
+        "sobota": 6,
+        "ne": 7,
+        "nedele": 7,
+        "neděle": 7,
     }
     return aliases.get(raw)
 
@@ -179,16 +231,31 @@ def sort_tasks(items: list[dict]) -> list[dict]:
     return sorted(items, key=sort_key)
 
 
+def purge_old_schedule(items: list[dict]) -> list[dict]:
+    current = today()
+    cutoff = current - timedelta(days=14)
+    kept = []
+    for item in items:
+        item_date = parse_date(str(item.get("date", "")))
+        if item_date is not None:
+            if item_date >= cutoff:
+                kept.append(item)
+        else:
+            kept.append(item)
+    return kept
+
+
 def sort_schedule(items: list[dict]) -> list[dict]:
-    def sort_key(item: dict) -> tuple[int, int, int, str]:
+    def sort_key(item: dict) -> tuple[int, str, int, int, str]:
         week_type = schedule_item_week_type(item)
-        week_order = {"both": 0, "odd": 1, "even": 2}.get(week_type, 0)
         day = parse_day(str(item.get("day", ""))) or 99
         item_type = item.get("type", "")
         type_order = {"holiday": 0, "excursion": 1, "substitution": 2, "": 3}.get(item_type, 3)
         hour_raw = str(item.get("hour", "")).strip()
         hour = int(hour_raw) if hour_raw.isdigit() else 0
-        return (type_order, day, hour, str(item.get("subject", "")))
+        date_obj = parse_date(str(item.get("date", "")))
+        date_iso = date_obj.isoformat() if date_obj else ""
+        return (type_order, date_iso, day, hour, str(item.get("subject", "")))
 
     return sorted(items, key=sort_key)
 
@@ -212,7 +279,7 @@ def load_data() -> dict:
 def save_data(data: dict) -> None:
     normalized = normalize_data(data)
     normalized["tasks"] = sort_tasks(purge_old(normalized["tasks"]))
-    normalized["schedule"] = sort_schedule(normalized["schedule"])
+    normalized["schedule"] = sort_schedule(purge_old_schedule(normalized["schedule"]))
     payload = json.dumps(normalized, ensure_ascii=False, indent=2)
     FILE.write_text(f"{PREFIX}{payload};\n", encoding="utf-8")
 
@@ -304,43 +371,36 @@ def schedule_item_week_type(item: dict) -> str:
 
 def find_schedule_item(
     items: list[dict],
-    day: int,
+    date_str: str,
     hour: int,
     group: str | None = None,
-    week_type: str | None = None,
 ) -> tuple[int, dict] | None:
     normalized_group = group.strip().lower() if group else None
-    normalized_week_type = parse_week_type(week_type or "") if week_type is not None else None
     for index, item in enumerate(items):
         hour_raw = str(item.get("hour", "")).strip()
         item_hour = int(hour_raw) if hour_raw.isdigit() else -1
         item_group = str(item.get("group", "Celá")).strip().lower()
-        item_week_type = schedule_item_week_type(item)
-        if parse_day(str(item.get("day", ""))) == day and item_hour == hour:
-            if normalized_week_type is not None and item_week_type != normalized_week_type:
-                continue
+        if str(item.get("date", "")).strip() == date_str and item_hour == hour:
             if normalized_group is None or item_group == normalized_group:
                 return index, item
     return None
 
 
-def find_schedule_slot(items: list[dict], day: int, hour: int, week_type: str | None = None) -> list[tuple[int, dict]]:
+def find_schedule_slot(items: list[dict], date_str: str, hour: int) -> list[tuple[int, dict]]:
     matches: list[tuple[int, dict]] = []
-    normalized_week_type = parse_week_type(week_type or "") if week_type is not None else None
     for index, item in enumerate(items):
         hour_raw = str(item.get("hour", "")).strip()
         item_hour = int(hour_raw) if hour_raw.isdigit() else -1
-        item_week_type = schedule_item_week_type(item)
-        if parse_day(str(item.get("day", ""))) == day and item_hour == hour and (normalized_week_type is None or item_week_type == normalized_week_type):
+        if str(item.get("date", "")).strip() == date_str and item_hour == hour:
             matches.append((index, item))
     return matches
 
 
-def read_schedule_slot() -> tuple[int, int, str] | None:
-    day_value = ask("Den (1-5 nebo Po, Út, St, Čt, Pá): ")
-    day = parse_day(day_value)
-    if day is None:
-        print("Neplatný den.")
+def read_schedule_slot() -> tuple[list[date], int] | None:
+    date_input = ask("Datum nebo rozmezí (dd.mm.yyyy nebo dd.mm.yyyy-dd.mm.yyyy): ")
+    dates = parse_date_or_range(date_input)
+    if not dates:
+        print("Neplatné datum nebo rozmezí.")
         return None
 
     hour_value = ask("Kolikátá hodina v dni: ")
@@ -352,13 +412,8 @@ def read_schedule_slot() -> tuple[int, int, str] | None:
     if hour <= 0:
         print("Hodina musí být větší než 0.")
         return None
-    week_value = ask("Týden (O obě, L lichý, S sudý): ") or "O"
-    week_type = parse_week_type(week_value)
-    if week_type is None:
-        print("Neplatný typ týdne.")
-        return None
 
-    return day, hour, week_type
+    return dates, hour
 
 
 def add_lesson() -> None:
@@ -367,26 +422,26 @@ def add_lesson() -> None:
     if slot is None:
         return
 
-    day, hour, week_type = slot
+    dates, hour = slot
     subject = ask("Předmět: ")
     classroom = ask("Třída: ")
     teacher = ask("Vyučující: ")
     group = ask("Skupina (Celá, Aj1, Aj2, TvD, TvCh, Šj, Nj, Fj_T): ") or "Celá"
 
-    entry = {
-        "day": day,
-        "hour": hour,
-        "weekType": week_type,
-        "subject": subject,
-        "classroom": classroom,
-        "teacher": teacher,
-        "group": group,
-    }
-
-    data["schedule"].append(entry)
+    for dt in dates:
+        entry = {
+            "date": format_date(dt),
+            "day": dt.weekday() + 1,
+            "hour": hour,
+            "subject": subject,
+            "classroom": classroom,
+            "teacher": teacher,
+            "group": group,
+        }
+        data["schedule"].append(entry)
 
     save_data(data)
-    print("Hodina uložená.")
+    print(f"Uloženo pro {len(dates)} dny/dní.")
 
 
 def add_substitution() -> None:
@@ -395,108 +450,95 @@ def add_substitution() -> None:
     if slot is None:
         return
 
-    day, hour, week_type = slot
-    found_items = find_schedule_slot(data["schedule"], day, hour, week_type)
-    if not found_items:
-        print("Tato hodina v rozvrhu neexistuje.")
-        return
+    dates, hour = slot
 
-    if len(found_items) == 1:
-        index, item = found_items[0]
-        print(
-            f"Nalezeno: {format_schedule_week_type(item)} | {item.get('group', 'Celá')} | "
-            f"{item.get('subject', '')} | {item.get('teacher', '')} | {item.get('classroom', '')}"
-        )
-    else:
-        print("V této hodině existuje více skupin.")
-        for i, (_, item) in enumerate(found_items):
-            print(
-                f"{i}: {format_schedule_week_type(item)} | {item.get('group', 'Celá')} | "
-                f"{item.get('subject', '')} | {item.get('teacher', '')} | {item.get('classroom', '')}"
-            )
+    for dt in dates:
+        date_str = format_date(dt)
+        found_items = find_schedule_slot(data["schedule"], date_str, hour)
+        if not found_items:
+            print(f"Hodina dne {date_str} neexistuje, přeskakuji.")
+            continue
 
-        group = ask("Skupina pro suplování: ") or ""
-        found = find_schedule_item(data["schedule"], day, hour, group, week_type)
-        if found is None:
-            print("Zadaná skupina v této hodině neexistuje.")
-            return
-        index, item = found
+        if len(found_items) == 1:
+            index, item = found_items[0]
+        else:
+            print(f"V hodině dne {date_str} existuje více skupin.")
+            for i, (_, item_obj) in enumerate(found_items):
+                print(
+                    f"{i}: {item_obj.get('group', 'Celá')} | "
+                    f"{item_obj.get('subject', '')} | {item_obj.get('teacher', '')} | {item_obj.get('classroom', '')}"
+                )
+            group_sel = ask("Skupina pro suplování: ") or ""
+            found = find_schedule_item(data["schedule"], date_str, hour, group_sel)
+            if found is None:
+                print("Zadaná skupina neexistuje, přeskakuji.")
+                continue
+            index, item = found
 
-    teacher = ask(f"Nový vyučující [{item.get('teacher', '')}]: ")
-    classroom = ask(f"Nová třída [{item.get('classroom', '')}]: ")
-    group = ask(f"Nová skupina [{item.get('group', 'Celá')}]: ")
+        teacher = ask(f"Nový vyučující [{item.get('teacher', '')}]: ")
+        classroom = ask(f"Nová třída [{item.get('classroom', '')}]: ")
+        group = ask(f"Nová skupina [{item.get('group', 'Celá')}]: ")
 
-    if teacher:
-        item["teacher"] = teacher
-    if classroom:
-        item["classroom"] = classroom
-    if group:
-        item["group"] = group
+        if teacher:
+            item["teacher"] = teacher
+        if classroom:
+            item["classroom"] = classroom
+        if group:
+            item["group"] = group
 
-    existing_type = item.get("type", "")
-    if existing_type and existing_type != "substitution":
-        confirm = ask(f"Tato hodina má typ '{TYPE_NAMES.get(existing_type, existing_type)}'. Přepsat na suplování? (a/n): ")
-        if confirm.lower() != "a":
-            print("Zrušeno.")
-            return
-    item["type"] = "substitution"
-    data["schedule"][index] = item
+        item["type"] = "substitution"
+        data["schedule"][index] = item
+
     save_data(data)
     print("Suplování uloženo.")
 
 
 def add_holiday() -> None:
     data = load_data()
-    day_value = ask("Den (1-5 nebo název): ")
-    day = parse_day(day_value)
-    if day is None:
-        print("Neplatný den.")
+    date_input = ask("Datum nebo rozmezí (dd.mm.yyyy nebo dd.mm.yyyy-dd.mm.yyyy): ")
+    dates = parse_date_or_range(date_input)
+    if not dates:
+        print("Neplatné datum nebo rozmezí.")
         return
-    print(f"  {week_parity_hint(0)}")
-    print(f"  {week_parity_hint(1)}")
-    week_value = ask("Týden (O obě, L lichý, S sudý, Enter = obě): ") or "O"
-    week_type = parse_week_type(week_value)
-    if week_type is None:
-        print("Neplatný typ týdne.")
-        return
-    note = ask("Název (např. Jarní prázdniny): ")
-    data["schedule"].append({
-        "day": day,
-        "type": "holiday",
-        "weekType": week_type,
-        "subject": note or "Prázdniny",
-    })
+
+    note = ask("Název (např. Jarní prázdniny): ") or "Prázdniny"
+
+    for dt in dates:
+        data["schedule"].append({
+            "date": format_date(dt),
+            "day": dt.weekday() + 1,
+            "type": "holiday",
+            "subject": note,
+        })
+
     save_data(data)
-    print("Prázdniny uloženy.")
+    print(f"Prázdniny uloženy pro {len(dates)} dny/dní.")
 
 
 def add_excursion() -> None:
     data = load_data()
-    day_value = ask("Den (1-5 nebo název): ")
-    day = parse_day(day_value)
-    if day is None:
-        print("Neplatný den.")
+    date_input = ask("Datum nebo rozmezí (dd.mm.yyyy nebo dd.mm.yyyy-dd.mm.yyyy): ")
+    dates = parse_date_or_range(date_input)
+    if not dates:
+        print("Neplatné datum nebo rozmezí.")
         return
+
     hour_value = ask("Hodina (nebo Enter pro celý den): ")
     hour = int(hour_value) if hour_value.isdigit() else 0
     name = ask("Název: ")
-    print(f"  {week_parity_hint(0)}")
-    print(f"  {week_parity_hint(1)}")
-    week_value = ask("Týden (O obě, L lichý, S sudý): ") or "O"
-    week_type = parse_week_type(week_value)
-    if week_type is None:
-        print("Neplatný typ týdne.")
-        return
-    data["schedule"].append({
-        "day": day,
-        "hour": hour,
-        "type": "excursion",
-        "subject": name,
-        "group": "Celá",
-        "weekType": week_type,
-    })
+
+    for dt in dates:
+        data["schedule"].append({
+            "date": format_date(dt),
+            "day": dt.weekday() + 1,
+            "hour": hour,
+            "type": "excursion",
+            "subject": name,
+            "group": "Celá",
+        })
+
     save_data(data)
-    print("Exkurze uložena.")
+    print(f"Exkurze uložena pro {len(dates)} dny/dní.")
 
 
 def delete_schedule() -> None:
@@ -511,8 +553,9 @@ def delete_schedule() -> None:
         item_type = item.get("type", "")
         type_label = TYPE_NAMES.get(item_type, "")
         type_str = f" [{type_label}]" if type_label else ""
+        date_str = item.get("date", format_day(item.get("day", "")))
         print(
-            f"{i}: {format_schedule_week_type(item)} | {format_day(item.get('day', ''))} | {item.get('hour', '')} | "
+            f"{i}: {date_str} | Hodina: {item.get('hour', '')} | "
             f"{item.get('subject', '')}{type_str} | {item.get('classroom', '')} | "
             f"{item.get('teacher', '')} | {item.get('group', 'Celá')}"
         )
@@ -544,8 +587,9 @@ def list_schedule() -> None:
         item_type = item.get("type", "")
         type_label = TYPE_NAMES.get(item_type, "")
         type_str = f" [{type_label}]" if type_label else ""
+        date_str = item.get("date", format_day(item.get("day", "")))
         print(
-            f"{i}: {format_schedule_week_type(item)} | {format_day(item.get('day', ''))} | {item.get('hour', '')} | "
+            f"{i}: {date_str} | Hodina: {item.get('hour', '')} | "
             f"{item.get('subject', '')}{type_str} | {item.get('classroom', '')} | "
             f"{item.get('teacher', '')} | {item.get('group', 'Celá')}"
         )

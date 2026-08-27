@@ -304,6 +304,13 @@ function normalizeGroupToken(value) {
 
 let selectedWeekOffset = null;
 
+function isSameDay(d1, d2) {
+    return d1 && d2 &&
+        d1.getFullYear() === d2.getFullYear() &&
+        d1.getMonth() === d2.getMonth() &&
+        d1.getDate() === d2.getDate();
+}
+
 function visibleSchedule() {
     const viewAj = document.getElementById("viewAj");
     const viewTv = document.getElementById("viewTv");
@@ -329,7 +336,7 @@ function visibleSchedule() {
         return true;
     };
 
-    return safeStore()
+    const allItems = safeStore()
         .schedule
         .map((item, index) => ({
             item,
@@ -339,14 +346,63 @@ function visibleSchedule() {
             group: String(item.group || "Celá").trim(),
             groupKey: normalizeGroupToken(item.group || "Celá"),
             weekType: scheduleWeekType(item),
-        }))
-        .filter(({ item, group, groupKey, weekType }) => {
-            if (!item) return false;
+            hasDate: Boolean(item.date || item.dateFrom),
+            itemDate: parseDate(item.date),
+            itemDateFrom: parseDate(item.dateFrom),
+            itemDateTo: parseDate(item.dateTo),
+        }));
+
+    const matched = allItems.filter(({ item, groupKey, weekType, hasDate, itemDate, itemDateFrom, itemDateTo, day }) => {
+        if (!item) return false;
+        if (!groupAllowed(groupKey)) return false;
+
+        if (selectedWeekOffset !== null) {
+            const cellDate = getDayDate(day, selectedWeekOffset);
+
+            if (itemDate) {
+                return isSameDay(itemDate, cellDate);
+            }
+
+            if (itemDateFrom && itemDateTo) {
+                return cellDate >= itemDateFrom && cellDate <= itemDateTo;
+            }
+
             const weekMatches = targetParity === null || weekType === "both" || weekType === (targetParity ? "odd" : "even");
-            const groupMatches = groupAllowed(groupKey);
-            return weekMatches && groupMatches;
-        })
-        .sort((a, b) => a.day - b.day || a.hour - b.hour || a.index - b.index);
+            return weekMatches;
+        }
+
+        return true;
+    });
+
+    if (selectedWeekOffset !== null) {
+        const dateSpecificKeys = new Set();
+        for (const entry of matched) {
+            if (entry.hasDate) {
+                dateSpecificKeys.add(`${entry.day}:${entry.hour}:${entry.groupKey}`);
+                dateSpecificKeys.add(`${entry.day}:${entry.hour}:cela`);
+                if (entry.hour === 0) {
+                    dateSpecificKeys.add(`${entry.day}:allday`);
+                }
+            }
+        }
+
+        return matched.filter((entry) => {
+            if (!entry.hasDate) {
+                if (dateSpecificKeys.has(`${entry.day}:allday`)) {
+                    return false;
+                }
+                if (dateSpecificKeys.has(`${entry.day}:${entry.hour}:${entry.groupKey}`)) {
+                    return false;
+                }
+                if (dateSpecificKeys.has(`${entry.day}:${entry.hour}:cela`)) {
+                    return false;
+                }
+            }
+            return true;
+        }).sort((a, b) => a.day - b.day || a.hour - b.hour || a.index - b.index);
+    }
+
+    return matched.sort((a, b) => a.day - b.day || a.hour - b.hour || a.index - b.index);
 }
 
 function allScheduleEntries() {
