@@ -411,6 +411,11 @@
             font-size: 0.85rem;
         }
 
+        .weekbar-spacer {
+            flex: 1 1 0;
+            min-width: 12px;
+        }
+
         .schedule-list {
             overflow-x: auto;
             padding: 2px;
@@ -820,7 +825,9 @@
                         <button id="weekPrev" type="button" data-week-offset="-1">Minulý týden</button>
                         <button id="weekCurrent" type="button" data-week-offset="0">Tento týden</button>
                         <button id="weekNext" type="button" data-week-offset="1">Příští týden</button>
+                        <div class="weekbar-spacer"></div>
                         <div id="weekLabel" class="week-label"></div>
+                        <button id="weekPermanent" type="button" data-week-offset="permanent">Stálý</button>
                     </div>
                     <div class="schedule-toolbar">
                         <label for="viewAj">Aj</label>

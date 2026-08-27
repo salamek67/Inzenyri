@@ -238,19 +238,20 @@ function populateDayCell(cell, day) {
     cell.replaceChildren();
     cell.scope = "row";
 
-    const dayDate = getDayDate(day, selectedWeekOffset);
-    const dateStr = formatSubDate(dayDate);
-
     const nameSpan = document.createElement("span");
     nameSpan.className = "schedule-day-name";
     nameSpan.textContent = dayLabel(day);
 
-    const dateSpan = document.createElement("span");
-    dateSpan.className = "schedule-day-date";
-    dateSpan.textContent = dateStr;
-
     cell.appendChild(nameSpan);
-    cell.appendChild(dateSpan);
+
+    if (selectedWeekOffset !== "permanent") {
+        const dayDate = getDayDate(day, selectedWeekOffset);
+        const dateStr = formatSubDate(dayDate);
+        const dateSpan = document.createElement("span");
+        dateSpan.className = "schedule-day-date";
+        dateSpan.textContent = dateStr;
+        cell.appendChild(dateSpan);
+    }
 }
 
 function scheduleRank(value) {
@@ -318,7 +319,7 @@ function visibleSchedule() {
     const selectedAj = normalizeGroupToken(viewAj?.value || "all");
     const selectedTv = normalizeGroupToken(viewTv?.value || "all");
     const selectedJazyky = normalizeGroupToken(viewJazyky?.value || "all");
-    const targetParity = selectedWeekOffset === null
+    const targetParity = selectedWeekOffset === null || selectedWeekOffset === "permanent"
         ? null
         : isoWeekParity(addDays(todayStart(), selectedWeekOffset * 7));
 
@@ -355,6 +356,13 @@ function visibleSchedule() {
     const matched = allItems.filter(({ item, groupKey, weekType, hasDate, itemDate, itemDateFrom, itemDateTo, day }) => {
         if (!item) return false;
         if (!groupAllowed(groupKey)) return false;
+
+        if (selectedWeekOffset === "permanent") {
+            if (hasDate) return false;
+            const type = String(item.type || "").trim().toLowerCase();
+            if (type === "holiday" || type === "substitution" || type === "excursion") return false;
+            return true;
+        }
 
         if (selectedWeekOffset !== null) {
             const cellDate = getDayDate(day, selectedWeekOffset);
@@ -600,16 +608,21 @@ function setWeekState(offset) {
     selectedWeekOffset = offset;
 
     for (const button of weekButtons) {
-        const buttonOffset = Number(button.getAttribute("data-week-offset"));
+        const rawOffset = button.getAttribute("data-week-offset");
+        const buttonOffset = rawOffset === "permanent" ? "permanent" : Number(rawOffset);
         const active = selectedWeekOffset !== null && buttonOffset === selectedWeekOffset;
         button.setAttribute("aria-pressed", String(active));
         button.classList.toggle("is-active", active);
     }
 
     if (weekLabel) {
-        weekLabel.textContent = selectedWeekOffset === null
-            ? "Všechny týdny"
-            : `${weekRangeLabel(selectedWeekOffset)} · ${weekParityLabel(isoWeekParity(addDays(todayStart(), selectedWeekOffset * 7)))} týden`;
+        if (selectedWeekOffset === "permanent") {
+            weekLabel.textContent = "Stálý rozvrh (bez suplování, prázdnin…)";
+        } else if (selectedWeekOffset === null) {
+            weekLabel.textContent = "Všechny týdny";
+        } else {
+            weekLabel.textContent = `${weekRangeLabel(selectedWeekOffset)} · ${weekParityLabel(isoWeekParity(addDays(todayStart(), selectedWeekOffset * 7)))} týden`;
+        }
     }
 
     renderSchedule();
@@ -684,7 +697,8 @@ if (scheduleClose) {
 
 for (const button of weekButtons) {
     button.addEventListener("click", () => {
-        const offset = Number(button.getAttribute("data-week-offset")) || 0;
+        const raw = button.getAttribute("data-week-offset");
+        const offset = raw === "permanent" ? "permanent" : Number(raw) || 0;
         setWeekState(offset);
     });
 }
