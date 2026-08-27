@@ -1,5 +1,18 @@
 var data = {
-  "tasks": [],
+  "tasks": [
+    {
+      "name": "Nový rok",
+      "date": "1.9.2026",
+      "task": "Zahájení nového školního roku",
+      "solution": ""
+    },
+    {
+      "name": "Rozdávání učebnic",
+      "date": "2.9.2026",
+      "task": "",
+      "solution": ""
+    }
+  ],
   "schedule": [
     {
       "date": "17.08.2026",
@@ -88,12 +101,6 @@ var data = {
     {
       "day": 1,
       "date": "31.08.2026",
-      "type": "holiday",
-      "subject": "Letní Prázdniny"
-    },
-    {
-      "date": "31.08.2026",
-      "day": 1,
       "type": "holiday",
       "subject": "Letní prázdniny"
     },
@@ -574,6 +581,133 @@ var data = {
       "classroom": "",
       "teacher": "Hb",
       "group": "Aj2"
+    },
+    {
+      "date": "01.09.2026",
+      "day": 2,
+      "hour": 1,
+      "type": "classhour",
+      "subject": "Třídnická",
+      "teacher": "Pe",
+      "group": "Celá"
+    },
+    {
+      "date": "01.09.2026",
+      "day": 2,
+      "hour": 2,
+      "type": "classhour",
+      "subject": "Třídnická",
+      "teacher": "Pe",
+      "group": "Celá"
+    },
+    {
+      "date": "01.09.2026",
+      "day": 2,
+      "hour": 3,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
+    },
+    {
+      "date": "01.09.2026",
+      "day": 2,
+      "hour": 4,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
+    },
+    {
+      "date": "01.09.2026",
+      "day": 2,
+      "hour": 5,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
+    },
+    {
+      "date": "01.09.2026",
+      "day": 2,
+      "hour": 6,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
+    },
+    {
+      "date": "01.09.2026",
+      "day": 2,
+      "hour": 7,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 1,
+      "type": "classhour",
+      "subject": "Třídnická",
+      "teacher": "Pe",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 2,
+      "type": "classhour",
+      "subject": "Třídnická",
+      "teacher": "Pe",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 3,
+      "type": "classhour",
+      "subject": "Třídnická",
+      "teacher": "Pe",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 4,
+      "type": "classhour",
+      "subject": "Třídnická",
+      "teacher": "Pe",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 5,
+      "type": "classhour",
+      "subject": "Třídnická",
+      "teacher": "Pe",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 6,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 7,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
+    },
+    {
+      "date": "02.09.2026",
+      "day": 3,
+      "hour": 8,
+      "type": "free",
+      "subject": "Volno",
+      "group": "Celá"
     }
   ]
 };

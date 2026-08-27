@@ -166,29 +166,34 @@ function createTaskBox(entry) {
     task.className = "task";
     renderFormattedText(task, entry.item.task);
 
-    const actions = document.createElement("div");
-    actions.className = "actions";
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "toggle-solution";
-    button.textContent = "Zobrazit řešení";
-    button.setAttribute("aria-expanded", "false");
-
-    const solution = document.createElement("div");
-    solution.className = "solution";
-    solution.hidden = true;
-
-    const solutionText = document.createElement("p");
-    renderFormattedText(solutionText, entry.item.solution, "Řešení není vyplněné.");
-
-    solution.appendChild(solutionText);
-    actions.appendChild(button);
     box.appendChild(heading);
     box.appendChild(date);
     box.appendChild(task);
-    box.appendChild(actions);
-    box.appendChild(solution);
+
+    const hasSolution = String(entry.item.solution || "").trim() !== "";
+
+    if (hasSolution) {
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "toggle-solution";
+        button.textContent = "Zobrazit řešení";
+        button.setAttribute("aria-expanded", "false");
+
+        const solution = document.createElement("div");
+        solution.className = "solution";
+        solution.hidden = true;
+
+        const solutionText = document.createElement("p");
+        renderFormattedText(solutionText, entry.item.solution);
+
+        solution.appendChild(solutionText);
+        actions.appendChild(button);
+        box.appendChild(actions);
+        box.appendChild(solution);
+    }
 
     return box;
 }

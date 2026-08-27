@@ -183,6 +183,13 @@
             border-color: rgba(100, 80, 40, 0.2);
             border-style: dashed;
         }
+        body.dark .schedule-entry.is-classhour {
+            background: rgba(50, 80, 130, 0.18);
+            border-color: rgba(70, 110, 170, 0.3);
+        }
+        body.dark .schedule-entry.is-classhour .schedule-entry-subject {
+            color: #7ab3e8;
+        }
         body.dark .schedule-table td.schedule-holiday {
             background: rgba(40, 90, 150, 0.12);
             border-color: rgba(60, 120, 200, 0.25);
@@ -417,14 +424,15 @@
         }
 
         .week-label {
+            flex: 1 1 0;
+            text-align: center;
             color: var(--muted);
             font-weight: 600;
             font-size: 0.85rem;
         }
 
         .weekbar-spacer {
-            flex: 1 1 0;
-            min-width: 12px;
+            display: none;
         }
 
         .schedule-list {
@@ -606,6 +614,16 @@
             color: var(--muted);
             font-weight: 600;
             font-style: italic;
+        }
+
+        .schedule-entry.is-classhour {
+            background: rgba(100, 140, 200, 0.12);
+            border-color: rgba(80, 120, 180, 0.25);
+        }
+
+        .schedule-entry.is-classhour .schedule-entry-subject {
+            color: #3a6a9a;
+            font-weight: 700;
         }
 
         .schedule-entry-group {

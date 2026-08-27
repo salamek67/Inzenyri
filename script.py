@@ -15,6 +15,7 @@ TYPE_NAMES = {
     "substitution": "Suplování",
     "excursion": "Exkurze/Výlet",
     "free": "Volno",
+    "classhour": "Třídnická",
 }
 DAY_NAMES = {
     1: "Pondělí",
@@ -304,10 +305,30 @@ def load_data() -> dict:
     return normalize_data(data)
 
 
+def dedup_schedule(items: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    result: list[dict] = []
+    for item in items:
+        key = (
+            str(item.get("date", "")),
+            str(item.get("day", "")),
+            str(item.get("hour", "")),
+            str(item.get("type", "")),
+            str(item.get("subject", "")).strip().lower(),
+            str(item.get("group", "Celá")).strip().lower(),
+            str(item.get("teacher", "")),
+            str(item.get("weekType", "")),
+        )
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
+
 def save_data(data: dict) -> None:
     normalized = normalize_data(data)
     normalized["tasks"] = sort_tasks(purge_old(normalized["tasks"]))
-    normalized["schedule"] = sort_schedule(purge_old_schedule(normalized["schedule"]))
+    normalized["schedule"] = sort_schedule(dedup_schedule(purge_old_schedule(normalized["schedule"])))
     payload = json.dumps(normalized, ensure_ascii=False, indent=2)
     FILE.write_text(f"{PREFIX}{payload};\n", encoding="utf-8")
 
@@ -478,6 +499,38 @@ def read_schedule_slot() -> tuple[list[date], int] | None:
     return dates, hour
 
 
+def parse_hour_range(value: str) -> list[int] | None:
+    raw = value.strip()
+    if "-" in raw:
+        parts = raw.split("-", 1)
+        if len(parts) == 2 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
+            start = int(parts[0].strip())
+            end = int(parts[1].strip())
+            if start > 0 and end >= start:
+                return list(range(start, end + 1))
+    elif raw.isdigit():
+        hour = int(raw)
+        if hour > 0:
+            return [hour]
+    return None
+
+
+def read_schedule_slot_range() -> tuple[list[date], list[int]] | None:
+    date_input = ask("Datum nebo rozmezí (dd.mm.yyyy nebo dd.mm.yyyy-dd.mm.yyyy): ")
+    dates = parse_date_or_range(date_input)
+    if not dates:
+        error("Neplatné datum nebo rozmezí.")
+        return None
+
+    hour_value = ask("Hodina nebo rozmezí (např. 2 nebo 2-4): ")
+    hours = parse_hour_range(hour_value)
+    if not hours:
+        error("Neplatná hodina.")
+        return None
+
+    return dates, hours
+
+
 def add_lesson() -> None:
     data = load_data()
     heading("Přidat hodinu")
@@ -610,26 +663,58 @@ def add_excursion() -> None:
 def add_free() -> None:
     data = load_data()
     heading("Přidat volno")
-    slot = read_schedule_slot()
+    slot = read_schedule_slot_range()
     if slot is None:
         return
 
-    dates, hour = slot
+    dates, hours = slot
     group = ask("Skupina (Celá, Aj1, Aj2, TvD, TvCh, Šj, Nj, Fj_T): ") or "Celá"
 
+    count = 0
     for dt in dates:
-        entry = {
-            "date": format_date(dt),
-            "day": dt.weekday() + 1,
-            "hour": hour,
-            "type": "free",
-            "subject": "Volno",
-            "group": group,
-        }
-        data["schedule"].append(entry)
+        for hour in hours:
+            entry = {
+                "date": format_date(dt),
+                "day": dt.weekday() + 1,
+                "hour": hour,
+                "type": "free",
+                "subject": "Volno",
+                "group": group,
+            }
+            data["schedule"].append(entry)
+            count += 1
 
     save_data(data)
-    info(f"Volno uloženo pro {Colors.BOLD}{len(dates)}{Colors.RESET}{Colors.GREEN} dny/dní.{Colors.RESET}")
+    info(f"Volno uloženo pro {Colors.BOLD}{count}{Colors.RESET}{Colors.GREEN} hodin.{Colors.RESET}")
+
+
+def add_classhour() -> None:
+    data = load_data()
+    heading("Přidat třídnickou hodinu")
+    slot = read_schedule_slot_range()
+    if slot is None:
+        return
+
+    dates, hours = slot
+    teacher = ask("Třídní učitel: ")
+
+    count = 0
+    for dt in dates:
+        for hour in hours:
+            entry = {
+                "date": format_date(dt),
+                "day": dt.weekday() + 1,
+                "hour": hour,
+                "type": "classhour",
+                "subject": "Třídnická",
+                "teacher": teacher,
+                "group": "Celá",
+            }
+            data["schedule"].append(entry)
+            count += 1
+
+    save_data(data)
+    info(f"Třídnická hodina uložena pro {Colors.BOLD}{count}{Colors.RESET}{Colors.GREEN} hodin.{Colors.RESET}")
 
 
 def delete_schedule() -> None:
@@ -772,6 +857,7 @@ def schedule_menu() -> None:
     print(f"  {Colors.CYAN}U{Colors.RESET} = upravit hodinu")
     print(f"  {Colors.CYAN}S{Colors.RESET} = suplování")
     print(f"  {Colors.CYAN}V{Colors.RESET} = volno")
+    print(f"  {Colors.CYAN}T{Colors.RESET} = třídnická hodina")
     print(f"  {Colors.CYAN}P{Colors.RESET} = prázdniny")
     print(f"  {Colors.CYAN}E{Colors.RESET} = exkurze/výlet")
     print(f"  {Colors.CYAN}D{Colors.RESET} = smazat hodinu")
@@ -786,6 +872,8 @@ def schedule_menu() -> None:
         add_substitution()
     elif choice == "v":
         add_free()
+    elif choice == "t":
+        add_classhour()
     elif choice == "p":
         add_holiday()
     elif choice == "e":
