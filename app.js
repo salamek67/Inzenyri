@@ -151,12 +151,45 @@ function visibleTasks() {
         .sort((a, b) => a.date - b.date || a.index - b.index);
 }
 
+function taskKey(item) {
+    return "task-done:" + (item.name || "") + "|" + (item.date || "");
+}
+
+function isTaskDone(item) {
+    return localStorage.getItem(taskKey(item)) === "true";
+}
+
+function setTaskDone(item, done) {
+    if (done) {
+        localStorage.setItem(taskKey(item), "true");
+    } else {
+        localStorage.removeItem(taskKey(item));
+    }
+}
+
 function createTaskBox(entry) {
     const box = document.createElement("article");
     box.className = "box";
 
+    const done = isTaskDone(entry.item);
+    if (done) box.classList.add("is-done");
+
+    // Checkbox + nadpis jako label
+    const checkLabel = document.createElement("label");
+    checkLabel.className = "task-check-label";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "task-checkbox";
+    checkbox.checked = done;
+    checkbox.setAttribute("aria-label", "Označit úkol jako splněný");
+
     const heading = document.createElement("h2");
+    heading.className = "box-title";
     heading.textContent = entry.item.name || "Bez názvu";
+
+    checkLabel.appendChild(checkbox);
+    checkLabel.appendChild(heading);
 
     const date = document.createElement("div");
     date.className = "date";
@@ -166,7 +199,7 @@ function createTaskBox(entry) {
     task.className = "task";
     renderFormattedText(task, entry.item.task);
 
-    box.appendChild(heading);
+    box.appendChild(checkLabel);
     box.appendChild(date);
     box.appendChild(task);
 
@@ -195,6 +228,11 @@ function createTaskBox(entry) {
         box.appendChild(solution);
     }
 
+    checkbox.addEventListener("change", () => {
+        setTaskDone(entry.item, checkbox.checked);
+        renderTasks();
+    });
+
     return box;
 }
 
@@ -214,8 +252,27 @@ function renderTasks() {
         return;
     }
 
-    for (const entry of tasks) {
+    const pending = tasks.filter(e => !isTaskDone(e.item));
+    const done    = tasks.filter(e =>  isTaskDone(e.item));
+
+    for (const entry of pending) {
         list.appendChild(createTaskBox(entry));
+    }
+
+    if (done.length) {
+        const hr = document.createElement("hr");
+        hr.className = "task-divider";
+
+        const label = document.createElement("div");
+        label.className = "task-done-label";
+        label.textContent = "Splněné úkoly";
+
+        list.appendChild(hr);
+        list.appendChild(label);
+
+        for (const entry of done) {
+            list.appendChild(createTaskBox(entry));
+        }
     }
 }
 
