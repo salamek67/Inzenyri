@@ -36,6 +36,14 @@ function todayStart() {
     return today;
 }
 
+function twoMonthsFromNow() {
+    const date = todayStart();
+    date.setMonth(date.getMonth() + 2);
+    return date;
+}
+
+let showDistantTasks = localStorage.getItem("showDistantTasks") === "true";
+
 function isoWeekParity(date) {
     const current = new Date(date);
     current.setHours(0, 0, 0, 0);
@@ -141,7 +149,7 @@ function renderFormattedText(target, value, fallbackText = "") {
     target.appendChild(fragment);
 }
 
-function visibleTasks() {
+function allFutureTasks() {
     const today = todayStart();
 
     return safeStore()
@@ -149,6 +157,16 @@ function visibleTasks() {
         .map((item, index) => ({ item, index, date: parseDate(item.date) }))
         .filter(({ item, date }) => item && date && date >= today)
         .sort((a, b) => a.date - b.date || a.index - b.index);
+}
+
+function visibleTasks() {
+    const cutoff = twoMonthsFromNow();
+    return allFutureTasks().filter(entry => entry.date <= cutoff);
+}
+
+function distantTasks() {
+    const cutoff = twoMonthsFromNow();
+    return allFutureTasks().filter(entry => entry.date > cutoff);
 }
 
 function taskKey(item) {
@@ -243,8 +261,9 @@ function renderTasks() {
     list.innerHTML = "";
 
     const tasks = visibleTasks();
+    const distant = distantTasks();
 
-    if (!tasks.length) {
+    if (!tasks.length && !distant.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
         empty.textContent = "Žádné aktuální úkoly.";
@@ -255,7 +274,7 @@ function renderTasks() {
     const pending = tasks.filter(e => !isTaskDone(e.item));
     const done    = tasks.filter(e =>  isTaskDone(e.item));
 
-    if (!pending.length) {
+    if (!pending.length && !distant.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
         empty.textContent = "Žádné aktuální úkoly.";
@@ -297,6 +316,74 @@ function renderTasks() {
         for (const entry of done) {
             list.appendChild(createTaskBox(entry));
         }
+    }
+
+    if (distant.length) {
+        const hr = document.createElement("hr");
+        hr.className = "task-divider";
+
+        const toggleSection = document.createElement("div");
+        toggleSection.className = "distant-toggle-section";
+
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "distant-toggle-btn";
+        toggleBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            <span>Úkoly za více než 2 měsíce (${distant.length})</span>
+        `;
+        toggleBtn.setAttribute("aria-expanded", String(showDistantTasks));
+
+        const distantContainer = document.createElement("div");
+        distantContainer.className = "distant-tasks-container";
+        if (!showDistantTasks) {
+            distantContainer.classList.add("is-collapsed");
+        }
+
+        for (const entry of distant) {
+            distantContainer.appendChild(createTaskBox(entry));
+        }
+
+        toggleBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            showDistantTasks = !showDistantTasks;
+            localStorage.setItem("showDistantTasks", String(showDistantTasks));
+            toggleBtn.setAttribute("aria-expanded", String(showDistantTasks));
+            toggleBtn.classList.toggle("is-expanded", showDistantTasks);
+
+            if (showDistantTasks) {
+                distantContainer.classList.remove("is-collapsed");
+                distantContainer.style.maxHeight = distantContainer.scrollHeight + "px";
+                setTimeout(() => {
+                    if (showDistantTasks) {
+                        distantContainer.style.maxHeight = "none";
+                    }
+                }, 350);
+            } else {
+                distantContainer.style.maxHeight = distantContainer.scrollHeight + "px";
+                // Force reflow
+                distantContainer.offsetHeight;
+                distantContainer.style.maxHeight = "0px";
+                distantContainer.classList.add("is-collapsed");
+            }
+        });
+
+        if (showDistantTasks) {
+            toggleBtn.classList.add("is-expanded");
+            requestAnimationFrame(() => {
+                distantContainer.style.maxHeight = distantContainer.scrollHeight + "px";
+                setTimeout(() => {
+                    distantContainer.style.maxHeight = "none";
+                }, 350);
+            });
+        }
+
+        toggleSection.appendChild(toggleBtn);
+        list.appendChild(hr);
+        list.appendChild(toggleSection);
+        list.appendChild(distantContainer);
     }
 }
 
