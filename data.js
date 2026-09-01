@@ -15,7 +15,7 @@ var data = {
     {
       "name": "Vybírání peněz",
       "date": "11.9.2026",
-      "task": "Vybírání peněz na pracovní sešit z matematiky",
+      "task": "Vybírání peněz na pracovní sešit z matematiky (143 Kč)",
       "solution": ""
     },
     {
