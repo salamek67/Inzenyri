@@ -222,6 +222,27 @@ function setTaskDone(item, done) {
     }
 }
 
+function cleanupTaskStorage() {
+    const store = safeStore();
+    const validKeys = new Set(store.tasks.map(task => taskKey(task)));
+    const keysToRemove = [];
+
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("task-done:") && !validKeys.has(key)) {
+            keysToRemove.push(key);
+        }
+    }
+
+    for (const key of keysToRemove) {
+        localStorage.removeItem(key);
+    }
+
+    if (keysToRemove.length > 0) {
+        console.log(`Vyčištěno ${keysToRemove.length} neexistujících úkolů z localStorage`);
+    }
+}
+
 function createTaskBox(entry) {
     const box = document.createElement("article");
     box.className = "box";
@@ -980,6 +1001,7 @@ for (const select of scheduleViewSelects) {
     });
 }
 
+cleanupTaskStorage();
 renderTasks();
 setWeekState(0);
 
