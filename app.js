@@ -86,6 +86,40 @@ function weekParityLabel(parity) {
     return parity === 1 ? "lichý" : "sudý";
 }
 
+function expandHolidays(holidays) {
+    const expanded = [];
+
+    if (!Array.isArray(holidays)) return expanded;
+
+    for (const holiday of holidays) {
+        const startDate = parseDate(holiday.start);
+        const endDate = parseDate(holiday.end);
+
+        if (!startDate || !endDate) continue;
+
+        let currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+            const dayOfWeek = currentDate.getDay() || 7; // Sunday = 7
+            expanded.push({
+                date: formatSubDate(currentDate),
+                day: dayOfWeek,
+                type: "holiday",
+                subject: holiday.subject || "Prázdniny",
+            });
+            currentDate = addDays(currentDate, 1);
+        }
+    }
+
+    return expanded;
+}
+
+function formatSubDate(date) {
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}.${month}.${year}`;
+}
+
 function safeStore() {
     const raw = window.data;
 
@@ -94,9 +128,12 @@ function safeStore() {
     }
 
     if (raw && typeof raw === "object") {
+        const schedule = Array.isArray(raw.schedule) ? raw.schedule : [];
+        const holidays = Array.isArray(raw.holidays) ? expandHolidays(raw.holidays) : [];
+
         return {
             tasks: Array.isArray(raw.tasks) ? raw.tasks : [],
-            schedule: Array.isArray(raw.schedule) ? raw.schedule : [],
+            schedule: [...schedule, ...holidays],
         };
     }
 

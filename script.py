@@ -9,7 +9,7 @@ from pathlib import Path
 
 FILE = Path(__file__).with_name("data.js")
 PREFIX = "var data = "
-DEFAULT_DATA = {"tasks": [], "schedule": []}
+DEFAULT_DATA = {"tasks": [], "holidays": [], "schedule": []}
 TYPE_NAMES = {
     "holiday": "Prázdniny",
     "substitution": "Suplování",
@@ -221,15 +221,17 @@ def week_parity_hint(offset: int = 0) -> str:
 
 def normalize_data(value: object) -> dict:
     if isinstance(value, list):
-        return {"tasks": value, "schedule": []}
+        return {"tasks": value, "holidays": [], "schedule": []}
 
     if not isinstance(value, dict):
-        return {"tasks": [], "schedule": []}
+        return {"tasks": [], "holidays": [], "schedule": []}
 
     tasks = value.get("tasks", [])
+    holidays = value.get("holidays", [])
     schedule = value.get("schedule", [])
     return {
         "tasks": tasks if isinstance(tasks, list) else [],
+        "holidays": holidays if isinstance(holidays, list) else [],
         "schedule": schedule if isinstance(schedule, list) else [],
     }
 
@@ -250,6 +252,31 @@ def sort_tasks(items: list[dict]) -> list[dict]:
         if item_date is None:
             return (1, str(item.get("date", "")))
         return (0, item_date.isoformat())
+
+    return sorted(items, key=sort_key)
+
+
+def purge_old_holidays(items: list[dict]) -> list[dict]:
+    current = today()
+    days_since_monday = current.weekday()
+    prev_week_start = current - timedelta(days=days_since_monday + 7)
+    kept = []
+    for item in items:
+        end_date = parse_date(str(item.get("end", "")))
+        start_date = parse_date(str(item.get("start", "")))
+        check_date = end_date or start_date
+        if check_date is not None:
+            if check_date >= prev_week_start:
+                kept.append(item)
+        else:
+            kept.append(item)
+    return kept
+
+
+def sort_holidays(items: list[dict]) -> list[dict]:
+    def sort_key(item: dict) -> str:
+        start_date = parse_date(str(item.get("start", "")))
+        return start_date.isoformat() if start_date else ""
 
     return sorted(items, key=sort_key)
 
@@ -328,6 +355,7 @@ def dedup_schedule(items: list[dict]) -> list[dict]:
 def save_data(data: dict) -> None:
     normalized = normalize_data(data)
     normalized["tasks"] = sort_tasks(purge_old(normalized["tasks"]))
+    normalized["holidays"] = sort_holidays(purge_old_holidays(normalized["holidays"]))
     normalized["schedule"] = sort_schedule(dedup_schedule(purge_old_schedule(normalized["schedule"])))
     payload = json.dumps(normalized, ensure_ascii=False, indent=2)
     FILE.write_text(f"{PREFIX}{payload};\n", encoding="utf-8")
@@ -621,16 +649,17 @@ def add_holiday() -> None:
 
     note = ask("Název (např. Jarní prázdniny): ") or "Prázdniny"
 
-    for dt in dates:
-        data["schedule"].append({
-            "date": format_date(dt),
-            "day": dt.weekday() + 1,
-            "type": "holiday",
-            "subject": note,
-        })
+    start_date = dates[0]
+    end_date = dates[-1]
+
+    data["holidays"].append({
+        "start": format_date(start_date),
+        "end": format_date(end_date),
+        "subject": note,
+    })
 
     save_data(data)
-    info(f"Prázdniny uloženy pro {Colors.BOLD}{len(dates)}{Colors.RESET}{Colors.GREEN} dny/dní.{Colors.RESET}")
+    info(f"Prázdniny uloženy: {format_date(start_date)} - {format_date(end_date)} ({len(dates)} dní).")
 
 
 def add_excursion() -> None:
