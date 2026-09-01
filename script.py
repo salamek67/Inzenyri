@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -915,6 +916,72 @@ def schedule_menu() -> None:
         error("Neznámá volba.")
 
 
+def git_commit_and_push(message: str | None = None) -> None:
+    heading("Git Commit & Push")
+    repo_dir = Path(__file__).resolve().parent
+
+    if not message:
+        message = ask("Zadej commit message: ")
+    if not message:
+        warn("Commit zrušen (prázdná zpráva).")
+        return
+
+    try:
+        # git add .
+        info("Přidávám změny (git add .)...")
+        subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+
+        # Get staged files
+        diff_res = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        staged_files = [f.strip() for f in diff_res.stdout.splitlines() if f.strip()]
+
+        if not staged_files:
+            warn("Žádné změny k commitu.")
+            return
+
+        # Check if changes include anything other than app.js, data.js, index.html
+        allowed_ci_files = {"app.js", "data.js", "index.html"}
+        other_files = [f for f in staged_files if f not in allowed_ci_files]
+
+        commit_title = message
+        if other_files:
+            if not commit_title.startswith("[ci skip]"):
+                commit_title = f"[ci skip] {commit_title}"
+            info(f"Detekovány ostatní soubory ({', '.join(other_files[:3])}{'...' if len(other_files) > 3 else ''})")
+            info(f"Přidán prefix [ci skip].")
+
+        # git commit -m
+        info("Vytvářím commit...")
+        subprocess.run(["git", "commit", "-m", commit_title], cwd=repo_dir, check=True, capture_output=True)
+        info(f"Commit vytvořen: {Colors.BOLD}{commit_title}{Colors.RESET}")
+
+        # git push -u origin main
+        info("Odesílám změny na vzdálený repozitář (git push -u origin main)...")
+        push_result = subprocess.run(
+            ["git", "push", "-u", "origin", "main"],
+            cwd=repo_dir,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        info(f"{Colors.BOLD}✓{Colors.RESET} Push byl úspěšně dokončen.")
+
+    except subprocess.CalledProcessError as e:
+        error(f"Chyba při provádění git příkazu:")
+        if e.stderr:
+            print(f"  {e.stderr.strip()}")
+        if e.stdout:
+            print(f"  {e.stdout.strip()}")
+    except Exception as e:
+        error(f"Neočekávaná chyba: {e}")
+
+
 def menu() -> None:
     heading("Inženýři – správa dat")
     print(f"  {Colors.CYAN}A{Colors.RESET} = přidat úkol")
@@ -922,6 +989,7 @@ def menu() -> None:
     print(f"  {Colors.CYAN}P{Colors.RESET} = promazat staré")
     print(f"  {Colors.CYAN}L{Colors.RESET} = vypsat úkoly")
     print(f"  {Colors.CYAN}R{Colors.RESET} = rozvrh")
+    print(f"  {Colors.CYAN}C{Colors.RESET} = commit & push")
     choice = ask("> ").lower()
 
     if choice == "a":
@@ -934,6 +1002,8 @@ def menu() -> None:
         list_tasks()
     elif choice == "r":
         schedule_menu()
+    elif choice == "c":
+        git_commit_and_push()
     else:
         error("Neznámá volba.")
 
@@ -954,6 +1024,9 @@ def main() -> None:
             schedule_menu()
         elif command in {"u", "edit"}:
             edit_lesson()
+        elif command in {"c", "commit", "push"}:
+            commit_msg = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else None
+            git_commit_and_push(commit_msg)
         elif command in {"h", "help", "-h", "--help"}:
             heading("Nápověda")
             print("  Příkazy:")
@@ -963,6 +1036,7 @@ def main() -> None:
             print(f"    {Colors.CYAN}l{Colors.RESET} / {Colors.CYAN}list{Colors.RESET}      – vypsat úkoly")
             print(f"    {Colors.CYAN}r{Colors.RESET} / {Colors.CYAN}rozvrh{Colors.RESET}    – správa rozvrhu")
             print(f"    {Colors.CYAN}u{Colors.RESET} / {Colors.CYAN}edit{Colors.RESET}      – upravit hodinu v rozvrhu")
+            print(f"    {Colors.CYAN}c{Colors.RESET} / {Colors.CYAN}commit{Colors.RESET}    – git add, commit a push na origin main")
             print(f"    {Colors.CYAN}h{Colors.RESET} / {Colors.CYAN}help{Colors.RESET}      – tato nápověda")
         elif command:
             error(f"Neznámý příkaz: {command}")
