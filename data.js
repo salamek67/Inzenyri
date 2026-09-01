@@ -13,6 +13,18 @@ var data = {
       "solution": ""
     },
     {
+      "name": "Vybírání peněz",
+      "date": "11.9.2026",
+      "task": "Vybírání peněz na pracovní sešit z matematiky",
+      "solution": ""
+    },
+    {
+      "name": "Adalbertinum",
+      "date": "19.11.2026",
+      "task": "Akce Setkání národů v Hradci Králové - Adalbertinum",
+      "solution": ""
+    },
+    {
       "name": "Pololetní vysvědčení",
       "date": "28.1.2027",
       "task": "Předávání pololetního vysvědčení",
