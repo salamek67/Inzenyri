@@ -1,12 +1,6 @@
 var data = {
   "tasks": [
     {
-      "name": "Nový rok",
-      "date": "1.9.2026",
-      "task": "Zahájení nového školního roku",
-      "solution": ""
-    },
-    {
       "name": "Rozdávání učebnic",
       "date": "2.9.2026",
       "task": "",
@@ -38,17 +32,63 @@ var data = {
     }
   ],
   "holidays": [
-    { "start": "24.08.2026", "end": "31.08.2026", "subject": "Letní prázdniny" },
-    { "start": "26.10.2026", "end": "27.10.2026", "subject": "Ředitelské volno" },
-    { "start": "29.10.2026", "end": "30.10.2026", "subject": "Podzimní prázdniny" },
-    { "start": "21.12.2026", "end": "22.12.2026", "subject": "Ředitelské volno" },
-    { "start": "23.12.2026", "end": "03.01.2027", "subject": "Vánoční prázdniny" },
-    { "start": "29.01.2027", "end": "29.01.2027", "subject": "Pololetní prázdniny" },
-    { "start": "01.02.2027", "end": "07.02.2027", "subject": "Jarní prázdniny" },
-    { "start": "25.03.2027", "end": "25.03.2027", "subject": "Velikonoční prázdniny" },
-    { "start": "01.07.2027", "end": "31.08.2027", "subject": "Hlavní prázdniny" }
+    {
+      "start": "24.08.2026",
+      "end": "31.08.2026",
+      "subject": "Letní prázdniny"
+    },
+    {
+      "start": "26.10.2026",
+      "end": "27.10.2026",
+      "subject": "Ředitelské volno"
+    },
+    {
+      "start": "29.10.2026",
+      "end": "30.10.2026",
+      "subject": "Podzimní prázdniny"
+    },
+    {
+      "start": "21.12.2026",
+      "end": "22.12.2026",
+      "subject": "Ředitelské volno"
+    },
+    {
+      "start": "23.12.2026",
+      "end": "03.01.2027",
+      "subject": "Vánoční prázdniny"
+    },
+    {
+      "start": "29.01.2027",
+      "end": "29.01.2027",
+      "subject": "Pololetní prázdniny"
+    },
+    {
+      "start": "01.02.2027",
+      "end": "07.02.2027",
+      "subject": "Jarní prázdniny"
+    },
+    {
+      "start": "25.03.2027",
+      "end": "25.03.2027",
+      "subject": "Velikonoční prázdniny"
+    },
+    {
+      "start": "01.07.2027",
+      "end": "31.08.2027",
+      "subject": "Hlavní prázdniny"
+    }
   ],
   "schedule": [
+    {
+      "day": 1,
+      "hour": 3,
+      "subject": "Špj",
+      "classroom": "2.A",
+      "teacher": "Ja",
+      "group": "Šj",
+      "date": "07.09.2026",
+      "type": "substitution"
+    },
     {
       "day": 1,
       "hour": 1,
