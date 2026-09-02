@@ -324,7 +324,7 @@ function renderTasks() {
     if (!tasks.length && !distant.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
-        empty.textContent = "Žádné aktuální úkoly.";
+        empty.textContent = "Žádné zadané úkoly.";
         list.appendChild(empty);
         return;
     }
@@ -332,32 +332,15 @@ function renderTasks() {
     const pending = tasks.filter(e => !isTaskDone(e.item));
     const done    = tasks.filter(e =>  isTaskDone(e.item));
 
-    if (!pending.length && !distant.length) {
+    if (!pending.length) {
         const empty = document.createElement("div");
         empty.className = "empty";
-        empty.textContent = "Žádné aktuální úkoly.";
+        empty.textContent = "Žádné zadané úkoly.";
         list.appendChild(empty);
-
-        if (done.length) {
-            const hr = document.createElement("hr");
-            hr.className = "task-divider";
-
-            const label = document.createElement("div");
-            label.className = "task-done-label";
-            label.textContent = "Splněné úkoly";
-
-            list.appendChild(hr);
-            list.appendChild(label);
-
-            for (const entry of done) {
-                list.appendChild(createTaskBox(entry));
-            }
+    } else {
+        for (const entry of pending) {
+            list.appendChild(createTaskBox(entry));
         }
-        return;
-    }
-
-    for (const entry of pending) {
-        list.appendChild(createTaskBox(entry));
     }
 
     if (done.length) {
