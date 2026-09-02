@@ -440,14 +440,6 @@ function getDayDate(dayNumber, weekOffset) {
     return addDays(weekStart, dayNumber - 1);
 }
 
-function formatSubDate(date) {
-    const formatter = new Intl.DateTimeFormat("cs-CZ", {
-        day: "numeric",
-        month: "numeric",
-    });
-    return formatter.format(date);
-}
-
 function populateDayCell(cell, day) {
     cell.replaceChildren();
     cell.scope = "row";
@@ -460,7 +452,7 @@ function populateDayCell(cell, day) {
 
     if (selectedWeekOffset !== "permanent") {
         const dayDate = getDayDate(day, selectedWeekOffset);
-        const dateStr = formatSubDate(dayDate);
+        const dateStr = `${String(dayDate.getDate()).padStart(2, "0")}.${String(dayDate.getMonth() + 1).padStart(2, "0")}.${dayDate.getFullYear()}`;
         const dateSpan = document.createElement("span");
         dateSpan.className = "schedule-day-date";
         dateSpan.textContent = dateStr;
@@ -700,7 +692,7 @@ function createScheduleTable(entries, allEntries = entries) {
         const type = entry.item.type || "";
         const isAllDay = !entry.hour || entry.hour === 0;
         if (isAllDay && (type === "holiday" || type === "excursion")) {
-            const d = entry.day;
+            const d = entry.date;
             if (!dayBanners[d]) dayBanners[d] = [];
             dayBanners[d].push(entry);
             continue;
@@ -734,22 +726,25 @@ function createScheduleTable(entries, allEntries = entries) {
     const tbody = document.createElement("tbody");
 
     for (const day of days) {
-        const dayBannerList = dayBanners[day];
+        const cellDate = getDayDate(day, selectedWeekOffset);
+        const dateStr = `${String(cellDate.getDate()).padStart(2, "0")}.${String(cellDate.getMonth() + 1).padStart(2, "0")}.${cellDate.getFullYear()}`;
+        const dayBannerList = dayBanners[dateStr];
         if (dayBannerList) {
-            for (const banner of dayBannerList) {
-                const type = banner.item.type || "";
-                const row = document.createElement("tr");
-                const labelCell = document.createElement("th");
-                populateDayCell(labelCell, day);
-                row.appendChild(labelCell);
+            // Vytvoř jeden řádek pro všechny bannery daného dne
+            const row = document.createElement("tr");
+            const labelCell = document.createElement("th");
+            populateDayCell(labelCell, day);
+            row.appendChild(labelCell);
 
-                const bannerCell = document.createElement("td");
-                bannerCell.colSpan = hours.length;
-                bannerCell.className = type === "holiday" ? "schedule-holiday" : "schedule-excursion";
-                bannerCell.textContent = banner.item.subject || (type === "holiday" ? "Prázdniny" : "Exkurze");
-                row.appendChild(bannerCell);
-                tbody.appendChild(row);
-            }
+            // Použij pouze první banner (obvykle by měl být jen jeden per den)
+            const banner = dayBannerList[0];
+            const type = banner.item.type || "";
+            const bannerCell = document.createElement("td");
+            bannerCell.colSpan = hours.length;
+            bannerCell.className = type === "holiday" ? "schedule-holiday" : "schedule-excursion";
+            bannerCell.textContent = banner.item.subject || (type === "holiday" ? "Prázdniny" : "Exkurze");
+            row.appendChild(bannerCell);
+            tbody.appendChild(row);
             continue;
         }
 
