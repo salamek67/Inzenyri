@@ -447,12 +447,12 @@
             overflow-x: auto;
             padding: 2px;
             border-radius: 14px;
+            -webkit-overflow-scrolling: touch;
         }
 
         .schedule-table {
             width: 100%;
             border-collapse: collapse;
-            table-layout: fixed;
             background: rgba(255, 250, 242, 0.5);
             border: 1px solid rgba(176, 111, 70, 0.14);
             border-radius: 16px;
@@ -1086,6 +1086,47 @@
             .schedule-toolbar select {
                 width: 100%;
                 min-width: 0;
+            }
+
+            .schedule-table {
+                min-width: initial;
+            }
+
+            .schedule-table th,
+            .schedule-table td {
+                padding: 8px 6px;
+                font-size: 0.75rem;
+            }
+
+            .schedule-table thead th {
+                font-size: 0.75rem;
+                white-space: nowrap;
+            }
+
+            .schedule-table tbody th {
+                min-width: 70px;
+                font-size: 0.72rem;
+                white-space: nowrap;
+            }
+
+            @media (max-width: 768px) {
+                .schedule-table col {
+                    width: 70px !important;
+                }
+
+            .schedule-entry-subject {
+                font-size: 0.72rem;
+                line-height: 1.2;
+            }
+
+            .schedule-entry-teacher,
+            .schedule-entry-classroom {
+                font-size: 0.62rem;
+            }
+
+            .schedule-cell-frame {
+                aspect-ratio: auto;
+                min-width: 90px;
             }
         }
     </style>
