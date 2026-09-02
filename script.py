@@ -600,9 +600,23 @@ def add_substitution() -> None:
 
     for dt in dates:
         date_str = format_date(dt)
+        day_of_week = dt.weekday() + 1
+
+        # Najdi hodiny s konkrétním datem
         found_items = find_schedule_slot(data["schedule"], date_str, hour)
+
+        # Pokud nejsou hodiny s datem, hledej podle dne v týdnu
         if not found_items:
-            warn(f"Hodina dne {date_str} neexistuje, přeskakuji.")
+            for index, item in enumerate(data["schedule"]):
+                if not item.get("date"):  # Pouze hodiny bez konkrétního data
+                    item_day = parse_day(str(item.get("day", "")))
+                    hour_raw = str(item.get("hour", "")).strip()
+                    item_hour = int(hour_raw) if hour_raw.isdigit() else -1
+                    if item_day == day_of_week and item_hour == hour:
+                        found_items.append((index, item))
+
+        if not found_items:
+            warn(f"Hodina dne {date_str} (den {day_of_week}) v {hour}. hodině neexistuje, přeskakuji.")
             continue
 
         if len(found_items) == 1:
@@ -614,8 +628,24 @@ def add_substitution() -> None:
                     f"  {Colors.CYAN}{i}{Colors.RESET}: {item_obj.get('group', 'Celá')} | "
                     f"{item_obj.get('subject', '')} | {item_obj.get('teacher', '')} | {item_obj.get('classroom', '')}"
                 )
-            group_sel = ask("Skupina pro suplování: ") or ""
-            found = find_schedule_item(data["schedule"], date_str, hour, group_sel)
+            group_sel = ask("Skupina pro suplování (číslo nebo název): ") or ""
+
+            # Zkus jako číslo
+            found = None
+            if group_sel.strip().isdigit():
+                sel_index = int(group_sel.strip())
+                if 0 <= sel_index < len(found_items):
+                    found = found_items[sel_index]
+
+            # Pokud ne, zkus jako název skupiny
+            if found is None:
+                normalized_group = group_sel.strip().lower()
+                for idx, itm in found_items:
+                    item_group = str(itm.get('group', 'Celá')).strip().lower()
+                    if item_group == normalized_group:
+                        found = (idx, itm)
+                        break
+
             if found is None:
                 error("Zadaná skupina neexistuje, přeskakuji.")
                 continue
@@ -625,15 +655,20 @@ def add_substitution() -> None:
         classroom = ask(f"Nová třída [{item.get('classroom', '')}]: ")
         group = ask(f"Nová skupina [{item.get('group', 'Celá')}]: ")
 
-        if teacher:
-            item["teacher"] = teacher
-        if classroom:
-            item["classroom"] = classroom
-        if group:
-            item["group"] = group
+        # Vytvoř kopii hodiny s konkrétním datem pro suplování
+        substitution = dict(item)
+        substitution["date"] = date_str
+        substitution["day"] = day_of_week
+        substitution["type"] = "substitution"
 
-        item["type"] = "substitution"
-        data["schedule"][index] = item
+        if teacher:
+            substitution["teacher"] = teacher
+        if classroom:
+            substitution["classroom"] = classroom
+        if group:
+            substitution["group"] = group
+
+        data["schedule"].append(substitution)
 
     save_data(data)
     info("Suplování uloženo.")
