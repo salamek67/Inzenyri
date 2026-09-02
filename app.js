@@ -692,7 +692,7 @@ function createScheduleTable(entries, allEntries = entries) {
         const type = entry.item.type || "";
         const isAllDay = !entry.hour || entry.hour === 0;
         if (isAllDay && (type === "holiday" || type === "excursion")) {
-            const d = entry.date;
+            const d = entry.item.date || entry.date;
             if (!dayBanners[d]) dayBanners[d] = [];
             dayBanners[d].push(entry);
             continue;
