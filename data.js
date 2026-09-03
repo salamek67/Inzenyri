@@ -1,15 +1,15 @@
 var data = {
   "tasks": [
     {
-      "name": "Rozdávání učebnic",
-      "date": "2.9.2026",
-      "task": "",
-      "solution": ""
+      "name": "Matematika",
+      "date": "7.9.2026",
+      "task": "PS: 6/4 (sčítací pyramida)",
+      "solution": "První řádek: 3/10; -2/5; 1/2; 1/4; -1/3<br>Druhý řádek: -1/10; 1/10; 3/4; -1/12<br>Třetí řádek: 0; 17/20; 2/3<br>Čtvrtý řádek: 17/20; 1 11/60<br>Pátý řádek: 2 11/30<br>Odpověď: e)<br><br>2. pyramida<br>První řádek: 3/8; 2/3; 2 1/3; -2 2/15; 37 1/2<br>Druhý řádek: 1 1/24; 3; 1/5; 35 11/30<br>Třetí řádek: 4 1/24; 3 1/5; 35 17/30<br>Čtvrtý řádek: 7 29/120; 38 23/30<br>Pátý řádek: 46 1/120<br>Odpověď: e)"
     },
     {
-      "name": "Vybírání peněz",
-      "date": "11.9.2026",
-      "task": "Vybírání peněz na pracovní sešit z matematiky (143 Kč)",
+      "name": "Český jazyk a literatura",
+      "date": "10.9.2026",
+      "task": "Na společnou hodinu (10.9.) si připravte 1x sešit 564 (Mluvince), 1x sešit 564 (Literatura a sloh). Na každou hodinu mějte připravené i lepidlo. Pondělí: mluvnice",
       "solution": ""
     },
     {
