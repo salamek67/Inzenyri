@@ -457,10 +457,14 @@ def ask_number(prompt, minimum=1, maximum=None):
     return value
 
 
-def build_quiz():
-    if ask("Přidat interaktivní zkoušení? [a/n]").lower() not in {"a", "ano"}:
+def build_practice():
+    heading(
+        "Editor procvičování",
+        "Vytvoř otázky s výběrem možností nebo textovou odpovědí.",
+    )
+    count = ask_number("Počet otázek (0 = bez procvičování)", 0, 100)
+    if count == 0:
         return None
-    count = ask_number("Počet otázek", 1, 100)
     questions = []
     for number in range(1, count + 1):
         heading(f"Otázka {number} z {count}", "Výběr z možností nebo textová odpověď")
@@ -516,9 +520,10 @@ def add():
     text = ask_multiline("Popis")
     if not parse_date(when):
         raise DataError("Neplatné datum.")
-    solution = (
-        ask_multiline("Řešení v Markdownu (volitelné)") if kind != "event" else ""
-    )
+    if kind == "task":
+        solution = ask_multiline("Řešení v Markdownu (volitelné)")
+    else:
+        solution = ""
     item = {
         "type": kind,
         "name": name,
@@ -527,7 +532,7 @@ def add():
         "solution": solution,
     }
     if kind == "test":
-        quiz = build_quiz()
+        quiz = build_practice()
         if quiz:
             item["quiz"] = quiz
     data["tasks"].append(item)
