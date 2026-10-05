@@ -1,5 +1,5 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.1.1";
+const PAGE_VERSION = "2.2.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const AAD = new TextEncoder().encode("inzenyri-data:v1");
@@ -114,19 +114,47 @@ function itemKey(item, index) {
   return `${index}:${itemType(item)}:${item.date ?? ""}`;
 }
 
+function safeMarkdownUrl(value) {
+  try {
+    const url = new URL(value, location.href);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function renderFormattedLine(target, line) {
+  const pattern = /(\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\))/g;
+  let cursor = 0;
+  for (const match of line.matchAll(pattern)) {
+    target.append(document.createTextNode(line.slice(cursor, match.index)));
+    if (match[2] !== undefined) {
+      const strong = document.createElement("strong");
+      strong.textContent = match[2];
+      target.append(strong);
+    } else {
+      const href = safeMarkdownUrl(match[4]);
+      if (href) {
+        const link = document.createElement("a");
+        link.textContent = match[3];
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        target.append(link);
+      } else target.append(document.createTextNode(match[0]));
+    }
+    cursor = match.index + match[0].length;
+  }
+  target.append(document.createTextNode(line.slice(cursor)));
+}
+
 function renderFormattedText(target, value) {
   const fragment = document.createDocumentFragment();
   const lines = String(value ?? "")
     .replace(/\\n/g, "\n")
     .split("\n");
   lines.forEach((line, lineIndex) => {
-    for (const part of line.split(/(\*\*[^*]+\*\*)/g)) {
-      if (part.startsWith("**") && part.endsWith("**")) {
-        const strong = document.createElement("strong");
-        strong.textContent = part.slice(2, -2);
-        fragment.append(strong);
-      } else fragment.append(document.createTextNode(part));
-    }
+    renderFormattedLine(fragment, line);
     if (lineIndex < lines.length - 1)
       fragment.append(document.createElement("br"));
   });
