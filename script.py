@@ -152,14 +152,31 @@ def key(password, salt, iterations):
     return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations, 32)
 
 
+def normalize_db_version(value):
+    match = re.fullmatch(r"(\d{2})\.(\d{1,2})\.(\d{1,2})-(\d+)", str(value))
+    if not match:
+        return str(value)
+    year, month, day, number = map(int, match.groups())
+    try:
+        datetime(2000 + year, month, day)
+    except ValueError:
+        return str(value)
+    return f"{year:02d}.{month}.{day}-{number}"
+
+
 def next_db_version():
-    prefix = datetime.now().strftime("%y.%m.%d")
+    now = datetime.now()
+    prefix = f"{now:%y}.{now.month}.{now.day}"
     number = 0
     if ENC.exists():
         try:
             value = read(ENC)
-            previous = value.get("dbVersion", "") if isinstance(value, dict) else ""
-            match = re.fullmatch(r"(\d{2}\.\d{2}\.\d{2})-(\d+)", previous)
+            previous = (
+                normalize_db_version(value.get("dbVersion", ""))
+                if isinstance(value, dict)
+                else ""
+            )
+            match = re.fullmatch(r"(\d{2}\.\d{1,2}\.\d{1,2})-(\d+)", previous)
             if match and match.group(1) == prefix:
                 number = int(match.group(2))
         except DataError:
@@ -172,7 +189,7 @@ def current_db_version():
         try:
             value = read(ENC)
             if isinstance(value, dict):
-                return str(value.get("dbVersion") or "neuvedena")
+                return normalize_db_version(value.get("dbVersion") or "neuvedena")
         except DataError:
             pass
     return "neuvedena"
@@ -187,7 +204,7 @@ def envelope(data, password, db_version=None):
     return {
         "format": FORMAT,
         "version": VERSION,
-        "dbVersion": db_version or current_db_version(),
+        "dbVersion": normalize_db_version(db_version or current_db_version()),
         "kdf": {
             "name": "PBKDF2",
             "hash": "SHA-256",
