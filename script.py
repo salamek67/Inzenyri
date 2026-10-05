@@ -79,7 +79,7 @@ def command(key, name, description):
 def logo():
     print(accent("\n  ╭──────────────────────────────────────────────╮"))
     print(
-        f"  {accent('│')}  {bold('INŽENÝŘI')}  {muted('· bezpečná správa přehledu')}          {accent('│')}"
+        f"  {accent('│')}  {bold('INŽENÝŘI')}  {muted('· bezpečná správa přehledu')}        {accent('│')}"
     )
     print(accent("  ╰──────────────────────────────────────────────╯"))
     state = (
@@ -460,14 +460,17 @@ def ask_number(prompt, minimum=1, maximum=None):
 def build_practice():
     heading(
         "Editor procvičování",
-        "Vytvoř otázky s výběrem možností nebo textovou odpovědí.",
+        "Výběr možností, textová odpověď nebo doplňování čárek.",
     )
     count = ask_number("Počet otázek (0 = bez procvičování)", 0, 100)
     if count == 0:
         return None
     questions = []
     for number in range(1, count + 1):
-        heading(f"Otázka {number} z {count}", "Výběr z možností nebo textová odpověď")
+        heading(
+            f"Otázka {number} z {count}",
+            "Výběr, textová odpověď nebo čárky ve větě",
+        )
         kind = {
             "v": "choice",
             "vyber": "choice",
@@ -475,11 +478,17 @@ def build_practice():
             "choice": "choice",
             "t": "text",
             "text": "text",
-        }.get(ask("Typ [v]ýběr / [t]ext").lower())
+            "c": "punctuation",
+            "č": "punctuation",
+            "carky": "punctuation",
+            "čárky": "punctuation",
+            "interpunkce": "punctuation",
+            "punctuation": "punctuation",
+        }.get(ask("Typ [v]ýběr / [t]ext / [č]árky").lower())
         if not kind:
             raise DataError("Neplatný typ otázky.")
-        prompt = ask_multiline("Znění otázky")
         if kind == "choice":
+            prompt = ask_multiline("Znění otázky")
             option_count = ask_number("Počet možností", 2, 4)
             options = [ask(f"Možnost {index}") for index in range(1, option_count + 1)]
             if any(not option for option in options):
@@ -493,7 +502,8 @@ def build_practice():
                 "options": options,
                 "answer": answer,
             }
-        else:
+        elif kind == "text":
+            prompt = ask_multiline("Znění otázky")
             answers = [
                 value.strip()
                 for value in ask("Správné odpovědi (odděl |)").split("|")
@@ -502,6 +512,34 @@ def build_practice():
             if not answers:
                 raise DataError("Je potřeba alespoň jedna správná odpověď.")
             question = {"type": "text", "prompt": prompt, "answers": answers}
+        else:
+            sentence = ask_multiline("Věta bez čárek")
+            if not sentence or "," in sentence:
+                raise DataError("Výchozí věta musí být vyplněná a bez čárek.")
+            answers = [
+                value.strip()
+                for value in ask_multiline(
+                    "Správné věty s čárkami (varianty odděl |)"
+                ).split("|")
+                if value.strip()
+            ]
+            if not answers or any("," not in answer for answer in answers):
+                raise DataError("Každá správná varianta musí obsahovat čárku.")
+            without_commas = lambda value: " ".join(
+                value.replace(",", " ").casefold().split()
+            )
+            if any(
+                without_commas(answer) != without_commas(sentence) for answer in answers
+            ):
+                raise DataError(
+                    "Správná varianta se smí od výchozí věty lišit jen čárkami a mezerami."
+                )
+            question = {
+                "type": "punctuation",
+                "prompt": "Doplň čárky do věty.",
+                "sentence": sentence,
+                "answers": answers,
+            }
         explanation = ask_multiline("Vysvětlení při chybě (volitelné)")
         if explanation:
             question["explanation"] = explanation

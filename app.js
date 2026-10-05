@@ -1,5 +1,5 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.0.1";
+const PAGE_VERSION = "2.1.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const AAD = new TextEncoder().encode("inzenyri-data:v1");
@@ -170,30 +170,31 @@ function createItem(item, index) {
   }
   if (String(item.solution ?? "").trim()) {
     const button = document.createElement("button"),
-      solution = document.createElement("div");
+      solution = document.createElement("div"),
+      isPractice = itemType(item) === "test",
+      showLabel = isPractice ? "Zobrazit procvičování" : "Zobrazit řešení",
+      hideLabel = isPractice ? "Skrýt procvičování" : "Skrýt řešení";
     button.className = "solution-toggle";
     button.type = "button";
-    button.textContent = "Zobrazit řešení";
+    button.textContent = showLabel;
+    button.dataset.showLabel = showLabel;
+    button.dataset.hideLabel = hideLabel;
     button.setAttribute("aria-expanded", "false");
     solution.className = "solution";
     solution.hidden = true;
     renderFormattedText(solution, item.solution);
     button.addEventListener("click", () => {
       solution.hidden = !solution.hidden;
-      button.textContent = solution.hidden ? "Zobrazit řešení" : "Skrýt řešení";
+      button.textContent = solution.hidden ? showLabel : hideLabel;
       button.setAttribute("aria-expanded", String(!solution.hidden));
     });
     article.append(button, solution);
   }
-  if (
-    itemType(item) === "test" &&
-    Array.isArray(item.quiz?.questions) &&
-    item.quiz.questions.length
-  ) {
+  if (Array.isArray(item.quiz?.questions) && item.quiz.questions.length) {
     const quizButton = document.createElement("button");
     quizButton.type = "button";
     quizButton.className = "quiz-start";
-    quizButton.textContent = "Spustit zkoušení →";
+    quizButton.textContent = "Spustit procvičování →";
     quizButton.addEventListener("click", () => openQuiz(index));
     article.append(quizButton);
   }
@@ -341,8 +342,8 @@ function initCarousels() {
             solutionButton.addEventListener("click", () => {
               solution.hidden = !solution.hidden;
               solutionButton.textContent = solution.hidden
-                ? "Zobrazit řešení"
-                : "Skrýt řešení";
+                ? solutionButton.dataset.showLabel
+                : solutionButton.dataset.hideLabel;
               solutionButton.setAttribute(
                 "aria-expanded",
                 String(!solution.hidden),
@@ -430,6 +431,14 @@ function initCarousels() {
 }
 
 let quizState = null;
+function normalizePunctuationAnswer(value) {
+  return String(value ?? "")
+    .trim()
+    .toLocaleLowerCase("cs")
+    .replace(/\s+/g, " ")
+    .replace(/\s*,\s*/g, ",");
+}
+
 function openQuiz(itemIndex) {
   const item = unlockedData?.tasks?.[itemIndex],
     questions = item?.quiz?.questions;
@@ -456,7 +465,7 @@ function renderQuizQuestion() {
     const title = document.createElement("h1"),
       score = document.createElement("div"),
       again = document.createElement("button");
-    title.textContent = "Výsledek zkoušení";
+    title.textContent = "Výsledek procvičování";
     score.className = "quiz-score";
     score.textContent = `${state.score} / ${state.questions.length}`;
     again.className = "quiz-primary";
@@ -480,7 +489,7 @@ function renderQuizQuestion() {
   if (
     !question ||
     typeof question !== "object" ||
-    !["choice", "text"].includes(question.type)
+    !["choice", "text", "punctuation"].includes(question.type)
   ) {
     heading.className = "quiz-question";
     heading.textContent = "Tuto otázku nelze načíst.";
@@ -549,7 +558,26 @@ function renderQuizQuestion() {
     input.name = "answerText";
     input.required = true;
     input.autocomplete = "off";
-    input.placeholder = "Napiš odpověď…";
+    if (question.type === "punctuation") {
+      const answers = Array.isArray(question.answers)
+        ? question.answers.filter((answer) => String(answer).trim())
+        : [];
+      if (!String(question.sentence ?? "").trim() || !answers.length) {
+        heading.textContent = "Otázka na doplnění čárek má neplatná data.";
+        const skip = document.createElement("button");
+        skip.type = "button";
+        skip.className = "quiz-primary";
+        skip.textContent = "Přeskočit otázku";
+        skip.addEventListener("click", () => {
+          state.current++;
+          renderQuizQuestion();
+        });
+        root.append(progress, heading, skip);
+        return;
+      }
+      input.value = String(question.sentence);
+      input.setAttribute("aria-label", "Věta k doplnění čárek");
+    } else input.placeholder = "Napiš odpověď…";
     answers.append(input);
   }
   actions.className = "quiz-actions";
@@ -561,22 +589,30 @@ function renderQuizQuestion() {
   root.append(progress, heading, form);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const value =
-      question.type === "text"
+    const isWritten = ["text", "punctuation"].includes(question.type),
+      value = isWritten
         ? new FormData(form).get("answerText")
         : Number(new FormData(form).get("answer"));
     const accepted =
-      question.type === "text"
-        ? (question.answers || [question.answer])
-            .map((answer) => String(answer).trim().toLocaleLowerCase("cs"))
-            .includes(String(value).trim().toLocaleLowerCase("cs"))
+      question.type === "punctuation"
+        ? (question.answers || [])
+            .map(normalizePunctuationAnswer)
+            .includes(normalizePunctuationAnswer(value))
+        : question.type === "text"
+          ? (question.answers || [question.answer])
+              .map((answer) => String(answer).trim().toLocaleLowerCase("cs"))
+              .includes(String(value).trim().toLocaleLowerCase("cs"))
         : value === Number(question.answer);
     if (accepted) state.score++;
     const feedback = document.createElement("div");
     feedback.className = `quiz-feedback ${accepted ? "correct" : "wrong"}`;
+    const correctPunctuation =
+      question.type === "punctuation" && question.answers?.[0]
+        ? ` Správná varianta: ${question.answers[0]}`
+        : "";
     feedback.textContent = accepted
       ? "Správně!"
-      : `Špatně.${question.explanation ? ` ${question.explanation}` : ""}`;
+      : `Špatně.${correctPunctuation}${question.explanation ? ` ${question.explanation}` : ""}`;
     form.querySelectorAll("input").forEach((input) => (input.disabled = true));
     submit.type = "button";
     submit.textContent =
