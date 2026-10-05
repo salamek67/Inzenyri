@@ -1,5 +1,5 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.0.0";
+const PAGE_VERSION = "2.0.1";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const AAD = new TextEncoder().encode("inzenyri-data:v1");

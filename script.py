@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent
 ENC = ROOT / "data.enc.json"
 PRIVATE = ROOT / "data.private.json"
 PASSWORD_FILE = ROOT / ".inzenyri-password"
+APP = ROOT / "app.js"
 FORMAT = "inzenyri-encrypted-data"
 VERSION = 1
 ITERATIONS = 600_000
@@ -290,6 +291,30 @@ def atomic_write(path, value):
             tmp = f.name
             json.dump(value, f, ensure_ascii=False, indent=2)
             f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        tmp = None
+    finally:
+        if tmp:
+            Path(tmp).unlink(missing_ok=True)
+
+
+def atomic_write_text(path, value):
+    tmp = None
+    try:
+        mode = path.stat().st_mode
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as f:
+            tmp = f.name
+            os.chmod(tmp, mode)
+            f.write(value)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
@@ -607,6 +632,52 @@ def auto_purge():
         print(f"  {style('✓','32')} {muted('Žádné prošlé položky.')}\n")
 
 
+def web_version():
+    try:
+        source = APP.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise DataError("Soubor app.js nelze načíst.") from exc
+    match = re.search(r'(?m)^const PAGE_VERSION = "(\d+)\.(\d+)\.(\d+)";$', source)
+    if not match:
+        raise DataError("V app.js chybí platná konstanta PAGE_VERSION.")
+    return source, match, tuple(map(int, match.groups()))
+
+
+def offer_web_version_bump():
+    source, match, version = web_version()
+    current = ".".join(map(str, version))
+    if ask(f"Zvýšit verzi webu {current}? [a/n]").lower() not in {"a", "ano"}:
+        return False
+
+    level = {
+        "1": 0,
+        "major": 0,
+        "ma": 0,
+        "2": 1,
+        "minor": 1,
+        "mi": 1,
+        "3": 2,
+        "patch": 2,
+        "p": 2,
+    }.get(ask("Index [1] major / [2] minor / [3] patch").lower())
+    if level is None:
+        raise DataError("Neplatný index verze. Použij 1, 2 nebo 3.")
+
+    bumped = list(version)
+    bumped[level] += 1
+    for index in range(level + 1, 3):
+        bumped[index] = 0
+    new_version = ".".join(map(str, bumped))
+    updated = (
+        source[: match.start()]
+        + f'const PAGE_VERSION = "{new_version}";'
+        + source[match.end() :]
+    )
+    atomic_write_text(APP, updated)
+    success(f"Verze webu zvýšena: {current} → {new_version}.")
+    return True
+
+
 def commit(message=None):
     if not ENC.exists():
         raise DataError("Nejdřív vytvoř data.enc.json příkazem encrypt.")
@@ -628,6 +699,8 @@ def commit(message=None):
         path = line[3:].split(" -> ")[-1].strip('"')
         changed_paths.append(path)
     touches_web = any(path in web_files or path == ".github/" for path in changed_paths)
+    if offer_web_version_bump():
+        touches_web = True
     data, password = open_data()
     if touches_web:
         save(data, password, next_db_version())
