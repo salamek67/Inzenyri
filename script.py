@@ -449,7 +449,7 @@ def ask_multiline(prompt):
     return ask(f"{prompt} (\\n = nový řádek)").replace("\\n", "\n")
 
 
-def choose_type():
+def parse_type(value):
     return {
         "u": "task",
         "ú": "task",
@@ -459,7 +459,11 @@ def choose_type():
         "test": "test",
         "a": "event",
         "akce": "event",
-    }.get(ask("Typ [u]kol / [t]est / [a]kce").lower())
+    }.get(str(value).lower())
+
+
+def choose_type(value=None):
+    return parse_type(value or ask("Typ [u]kol / [t]est / [a]kce"))
 
 
 def ask_number(prompt, minimum=1, maximum=None):
@@ -562,10 +566,10 @@ def build_practice():
     return {"questions": questions}
 
 
-def add():
+def add(type_argument=None):
     heading("Nová položka", "Úkol, test nebo školní akce")
     data, password = open_data()
-    kind = choose_type()
+    kind = choose_type(type_argument)
     if not kind:
         raise DataError("Neplatný typ.")
     name = ask("Název")
@@ -786,7 +790,7 @@ def commit(message=None):
 
 def help_text():
     heading("Příkazy", "Příkaz můžeš napsat celý nebo použít krátkou zkratku.")
-    command("add", "Přidat", "nový úkol, test nebo akci")
+    command("add [u|t|a]", "Přidat", "nový úkol, test nebo akci")
     command("list", "Přehled", "vypsat aktuální položky")
     command("delete [id…]", "Smazat", "odstranit indexy nebo rozsahy")
     command("encrypt", "Zašifrovat", "použít uložené heslo")
@@ -795,7 +799,7 @@ def help_text():
     command("commit [text]", "Publikovat", "commit a push na GitHub")
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
-    print(f"\n  {muted('Příklady:')} delete 2 4 · delete 1,3 · delete 2-5\n")
+    print(f"\n  {muted('Příklady:')} add u · add t · add a · delete 2 4 · delete 2-5\n")
 
 
 def dispatch(cmd, args=()):
@@ -807,7 +811,9 @@ def dispatch(cmd, args=()):
     elif cmd in {"password", "passwd", "change-password"}:
         change_password()
     elif cmd in {"a", "add"}:
-        add()
+        if len(args) > 1:
+            raise DataError("Příkaz add přijímá nejvýše jednu zkratku typu.")
+        add(args[0] if args else None)
     elif cmd in {"l", "list", "ls"}:
         listing()
     elif cmd in {"d", "delete", "del"}:
@@ -831,11 +837,13 @@ def setup_completion():
 
     def complete(text, state):
         line = readline.get_line_buffer()
-        options = (
-            [name for name in COMMANDS if name.startswith(text)]
-            if len(line.split()) <= 1
-            else []
-        )
+        parts = line.lstrip().split()
+        if not parts or (len(parts) == 1 and not line.endswith(" ")):
+            options = [name for name in COMMANDS if name.startswith(text)]
+        elif parts[0].lower() in {"a", "add"} and len(parts) <= 2:
+            options = [kind for kind in ("u", "t", "a") if kind.startswith(text)]
+        else:
+            options = []
         return (
             options[state] + (" " if state < len(options) else "")
             if state < len(options)
