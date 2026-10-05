@@ -432,19 +432,37 @@ function initCarousels() {
 }
 
 let quizState = null;
-function normalizePunctuationAnswer(value) {
-  return String(value ?? "")
-    .trim()
-    .toLocaleLowerCase("cs")
+function normalizeWrittenAnswer(value, ignoreCase = false) {
+  const normalized = String(value ?? "").trim();
+  return ignoreCase ? normalized.toLocaleLowerCase("cs") : normalized;
+}
+
+function normalizePunctuationAnswer(value, ignoreCase = false) {
+  return normalizeWrittenAnswer(value, ignoreCase)
     .replace(/\s+/g, " ")
     .replace(/\s*,\s*/g, ",");
+}
+
+function shuffledQuestions(questions) {
+  const shuffled = [...questions];
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
+  }
+  return shuffled;
 }
 
 function openQuiz(itemIndex) {
   const item = unlockedData?.tasks?.[itemIndex],
     questions = item?.quiz?.questions;
   if (!Array.isArray(questions) || !questions.length) return;
-  quizState = { item, questions, current: 0, score: 0, answered: false };
+  quizState = {
+    item,
+    questions: item.quiz.shuffle ? shuffledQuestions(questions) : [...questions],
+    current: 0,
+    score: 0,
+    answered: false,
+  };
   document.getElementById("app").hidden = true;
   document.getElementById("quizView").hidden = false;
   history.pushState({ quiz: true }, "", "#zkouseni");
@@ -597,12 +615,20 @@ function renderQuizQuestion() {
     const accepted =
       question.type === "punctuation"
         ? (question.answers || [])
-            .map(normalizePunctuationAnswer)
-            .includes(normalizePunctuationAnswer(value))
+            .map((answer) =>
+              normalizePunctuationAnswer(answer, question.ignoreCase === true),
+            )
+            .includes(
+              normalizePunctuationAnswer(value, question.ignoreCase === true),
+            )
         : question.type === "text"
           ? (question.answers || [question.answer])
-              .map((answer) => String(answer).trim().toLocaleLowerCase("cs"))
-              .includes(String(value).trim().toLocaleLowerCase("cs"))
+              .map((answer) =>
+                normalizeWrittenAnswer(answer, question.ignoreCase === true),
+              )
+              .includes(
+                normalizeWrittenAnswer(value, question.ignoreCase === true),
+              )
         : value === Number(question.answer);
     if (accepted) state.score++;
     const feedback = document.createElement("div");
