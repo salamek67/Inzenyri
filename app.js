@@ -116,7 +116,9 @@ function itemKey(item, index) {
 
 function renderFormattedText(target, value) {
   const fragment = document.createDocumentFragment();
-  const lines = String(value ?? "").split("\n");
+  const lines = String(value ?? "")
+    .replace(/\\n/g, "\n")
+    .split("\n");
   lines.forEach((line, lineIndex) => {
     for (const part of line.split(/(\*\*[^*]+\*\*)/g)) {
       if (part.startsWith("**") && part.endsWith("**")) {
@@ -247,13 +249,29 @@ function initCarousels() {
         (Number.parseFloat(styles.columnGap || styles.gap) || 0)
       );
     };
-    const index = () =>
-      Math.max(
-        0,
-        Math.min(cards().length - 1, Math.round(list.scrollLeft / step())),
-      );
+    const distanceFromCenter = (card) => {
+      const listBox = list.getBoundingClientRect(),
+        cardBox = card.getBoundingClientRect();
+      return cardBox.left + cardBox.width / 2 - (listBox.left + listBox.width / 2);
+    };
+    const index = () => {
+      const allCards = cards();
+      if (!allCards.length) return 0;
+      return allCards.reduce(
+        (closest, card, cardIndex) => {
+          const distance = Math.abs(distanceFromCenter(card));
+          return distance < closest.distance
+            ? { index: cardIndex, distance }
+            : closest;
+        },
+        { index: 0, distance: Infinity },
+      ).index;
+    };
     const goTo = (target, behavior = "smooth") => {
-      const left = Math.max(0, target) * step();
+      const allCards = cards(),
+        card = allCards[Math.max(0, Math.min(allCards.length - 1, target))];
+      if (!card) return;
+      const left = list.scrollLeft + distanceFromCenter(card);
       if (behavior === "instant") {
         list.style.scrollBehavior = "auto";
         list.scrollLeft = left;

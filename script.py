@@ -405,6 +405,10 @@ def ask(prompt):
     return input(f"  {accent('›')} {prompt}: ").strip()
 
 
+def ask_multiline(prompt):
+    return ask(f"{prompt} (\\n = nový řádek)").replace("\\n", "\n")
+
+
 def choose_type():
     return {
         "u": "task",
@@ -445,7 +449,7 @@ def build_quiz():
         }.get(ask("Typ [v]ýběr / [t]ext").lower())
         if not kind:
             raise DataError("Neplatný typ otázky.")
-        prompt = ask("Znění otázky")
+        prompt = ask_multiline("Znění otázky")
         if kind == "choice":
             option_count = ask_number("Počet možností", 2, 4)
             options = [ask(f"Možnost {index}") for index in range(1, option_count + 1)]
@@ -469,7 +473,7 @@ def build_quiz():
             if not answers:
                 raise DataError("Je potřeba alespoň jedna správná odpověď.")
             question = {"type": "text", "prompt": prompt, "answers": answers}
-        explanation = ask("Vysvětlení při chybě (volitelné)")
+        explanation = ask_multiline("Vysvětlení při chybě (volitelné)")
         if explanation:
             question["explanation"] = explanation
         questions.append(question)
@@ -482,10 +486,14 @@ def add():
     kind = choose_type()
     if not kind:
         raise DataError("Neplatný typ.")
-    name, when, text = ask("Název"), ask("Datum (dd.mm.yyyy)"), ask("Popis")
+    name = ask("Název")
+    when = ask("Datum (dd.mm.yyyy)")
+    text = ask_multiline("Popis")
     if not parse_date(when):
         raise DataError("Neplatné datum.")
-    solution = ask("Řešení v Markdownu (volitelné)") if kind != "event" else ""
+    solution = (
+        ask_multiline("Řešení v Markdownu (volitelné)") if kind != "event" else ""
+    )
     item = {
         "type": kind,
         "name": name,
