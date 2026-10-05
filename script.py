@@ -691,7 +691,6 @@ def commit(message=None):
     web_files = (
         "index.html",
         "app.js",
-        "data.enc.json",
         ".github/workflows/static.yml",
     )
     changed_paths = []
@@ -699,16 +698,15 @@ def commit(message=None):
         path = line[3:].split(" -> ")[-1].strip('"')
         changed_paths.append(path)
     touches_web = any(path in web_files or path == ".github/" for path in changed_paths)
-    if offer_web_version_bump():
-        touches_web = True
-    data, password = open_data()
+    touches_data = "data.enc.json" in changed_paths
     if touches_web:
+        offer_web_version_bump()
+    data, password = open_data()
+    if touches_data:
         save(data, password, next_db_version())
-        success("Data ověřena, verzována a znovu zašifrována před publikací.")
+        success("Data ověřena, zvýšena verze DB a obsah znovu zašifrován.")
     else:
-        print(
-            f"  {style('✓','32')} {muted('Šifrovaná data ověřena; web se nemění.')}\n"
-        )
+        print(f"  {style('✓','32')} {muted('Šifrovaná data ověřena; DB se nemění.')}\n")
     files = [
         "index.html",
         "app.js",
@@ -719,7 +717,9 @@ def commit(message=None):
         ".github/workflows/static.yml",
     ]
     message = message or ask("Zpráva commitu") or "Aktualizace přehledu"
-    if not touches_web and not message.lower().startswith("[ci skip]"):
+    if not (touches_web or touches_data) and not message.lower().startswith(
+        "[ci skip]"
+    ):
         message = f"[ci skip] {message}"
     subprocess.run(["git", "add", *files], cwd=ROOT, check=True)
     subprocess.run(["git", "commit", "-m", message], cwd=ROOT, check=True)
