@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+venv/
+.env
+.claude-omniroute/
+data.private.json
+*.private.json
+.inzenyri-password
+.inzenyri-password.*.tmp
+.venv/
