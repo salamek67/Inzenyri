@@ -401,6 +401,15 @@ def change_password():
     success("Heslo bylo bezpečně změněno a lokálně uloženo.")
 
 
+def read_private():
+    try:
+        return normalize(read(PRIVATE))
+    except DataError as exc:
+        raise DataError(
+            "Privátní zdroj dat nelze načíst. Oprav data.private.json nebo jej obnov."
+        ) from exc
+
+
 def open_data():
     global SESSION_PASSWORD
     encrypted = read(ENC)
@@ -408,13 +417,16 @@ def open_data():
         SESSION_PASSWORD = load_password()
     if SESSION_PASSWORD is not None:
         try:
-            return decrypt(encrypted, SESSION_PASSWORD), SESSION_PASSWORD
+            decrypt(encrypted, SESSION_PASSWORD)
         except DataError:
             SESSION_PASSWORD = None
             if PASSWORD_FILE.exists():
                 PASSWORD_FILE.unlink()
+        else:
+            return read_private(), SESSION_PASSWORD
     password = secret("Heslo k datům")
-    data = decrypt(encrypted, password)
+    decrypt(encrypted, password)
+    data = read_private()
     SESSION_PASSWORD = password
     save_password(password)
     success("Data odemčena a heslo lokálně uloženo.")
@@ -422,8 +434,11 @@ def open_data():
 
 
 def save(data, password, db_version=None):
+    data = normalize(data)
     data["tasks"].sort(key=lambda x: parse_date(x.get("date", "")) or date.max)
-    atomic_write(ENC, envelope(data, password, db_version))
+    encrypted = envelope(data, password, db_version)
+    atomic_write(PRIVATE, data)
+    atomic_write(ENC, encrypted)
 
 
 def ask(prompt):
@@ -575,7 +590,7 @@ def add():
             item["quiz"] = quiz
     data["tasks"].append(item)
     save(data, password)
-    success("Položka byla zašifrována a uložena.")
+    success("Položka byla uložena do privátních dat a zašifrována.")
 
 
 def current(data):
@@ -658,7 +673,7 @@ def delete(arguments=()):
     target_ids = {id(target) for target in targets}
     data["tasks"] = [item for item in data["tasks"] if id(item) not in target_ids]
     save(data, password)
-    success(f"Smazáno položek: {len(targets)}.")
+    success(f"Z privátních i šifrovaných dat smazáno položek: {len(targets)}.")
 
 
 def auto_purge():
