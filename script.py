@@ -514,20 +514,58 @@ def listing():
     display(current(data))
 
 
-def delete(index=None):
+def parse_delete_indices(arguments, item_count):
+    raw = " ".join(arguments).strip()
+    if not raw:
+        raw = ask("Indexy ke smazání (např. 1 3 nebo 2-4)")
+
+    tokens = [token for token in re.split(r"[\s,]+", raw) if token]
+    if not tokens:
+        raise DataError("Zadej alespoň jeden index.")
+
+    indices = []
+    for token in tokens:
+        interval = re.fullmatch(r"(\d+)-(\d+)", token)
+        if interval:
+            start, end = map(int, interval.groups())
+            if start > end:
+                raise DataError(f"Neplatný rozsah „{token}“.")
+            values = range(start, end + 1)
+        elif token.isdigit():
+            values = (int(token),)
+        else:
+            raise DataError(f"Neplatný index nebo rozsah „{token}“.")
+
+        for index in values:
+            if index >= item_count:
+                raise DataError(f"Index {index} neexistuje.")
+            if index not in indices:
+                indices.append(index)
+    return indices
+
+
+def delete(arguments=()):
     data, password = open_data()
     items = current(data)
     display(items)
-    try:
-        target = items[int(index if index is not None else ask("Index ke smazání: "))]
-    except (ValueError, IndexError) as exc:
-        raise DataError("Neplatný index.") from exc
-    if ask(f"Smazat „{target.get('name','')}“? [a/n]: ").lower() not in {"a", "ano"}:
+    if not items:
+        return
+
+    indices = parse_delete_indices(arguments, len(items))
+    targets = [items[index] for index in indices]
+    names = ", ".join(f"„{item.get('name', '')}“" for item in targets)
+    count_label = "1 položku" if len(targets) == 1 else f"{len(targets)} položek"
+    if ask(f"Smazat {count_label} ({names})? [a/n]").lower() not in {
+        "a",
+        "ano",
+    }:
         print("Zrušeno.")
         return
-    data["tasks"].remove(target)
+
+    target_ids = {id(target) for target in targets}
+    data["tasks"] = [item for item in data["tasks"] if id(item) not in target_ids]
     save(data, password)
-    success("Položka byla smazána.")
+    success(f"Smazáno položek: {len(targets)}.")
 
 
 def auto_purge():
@@ -594,14 +632,14 @@ def help_text():
     heading("Příkazy", "Příkaz můžeš napsat celý nebo použít krátkou zkratku.")
     command("add", "Přidat", "nový úkol, test nebo akci")
     command("list", "Přehled", "vypsat aktuální položky")
-    command("delete [id]", "Smazat", "odstranit vybranou položku")
+    command("delete [id…]", "Smazat", "odstranit indexy nebo rozsahy")
     command("encrypt", "Zašifrovat", "použít uložené heslo")
     command("init", "První nastavení", "vytvořit nové heslo a data")
     command("password", "Změnit heslo", "bezpečně přešifrovat data")
     command("commit [text]", "Publikovat", "commit a push na GitHub")
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
-    print(f"\n  {muted('Příklad:')} delete 2\n")
+    print(f"\n  {muted('Příklady:')} delete 2 4 · delete 1,3 · delete 2-5\n")
 
 
 def dispatch(cmd, args=()):
@@ -617,7 +655,7 @@ def dispatch(cmd, args=()):
     elif cmd in {"l", "list", "ls"}:
         listing()
     elif cmd in {"d", "delete", "del"}:
-        delete(args[0] if args else None)
+        delete(args)
     elif cmd in {"c", "commit", "push"}:
         commit(" ".join(args) or None)
     elif cmd in {"h", "help", "?"}:
