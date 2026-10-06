@@ -1,13 +1,18 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.2.0";
+const PAGE_VERSION = "2.3.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
+const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
 const AAD = new TextEncoder().encode("inzenyri-data:v1");
 const CATEGORIES = {
   test: ["testsList", "testsCount"],
   task: ["tasksList", "tasksCount"],
   event: ["eventsList", "eventsCount"],
 };
+const CAROUSEL_LISTS = [
+  ...Object.values(CATEGORIES).map(([listId]) => listId),
+  "completedList",
+];
 
 let unlockedData = null;
 const doneItems = new Set();
@@ -110,8 +115,54 @@ function itemType(item) {
   return "task";
 }
 
-function itemKey(item, index) {
-  return `${index}:${itemType(item)}:${item.date ?? ""}`;
+function stableItemHash(value) {
+  let first = 0xdeadbeef,
+    second = 0x41c6ce57;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 2654435761);
+    second = Math.imul(second ^ code, 1597334677);
+  }
+  first = Math.imul(first ^ (first >>> 16), 2246822507) ^
+    Math.imul(second ^ (second >>> 13), 3266489909);
+  second = Math.imul(second ^ (second >>> 16), 2246822507) ^
+    Math.imul(first ^ (first >>> 13), 3266489909);
+  return `${(second >>> 0).toString(36)}${(first >>> 0).toString(36)}`;
+}
+
+function itemKey(item) {
+  const identity = JSON.stringify([
+    itemType(item),
+    String(item.name ?? ""),
+    String(item.date ?? ""),
+    String(item.task ?? ""),
+  ]);
+  return `v1:${stableItemHash(identity)}`;
+}
+
+function saveDoneItems() {
+  try {
+    localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...doneItems]));
+  } catch {
+    /* Soukromý režim nebo nastavení prohlížeče může úložiště zakázat. */
+  }
+}
+
+function restoreDoneItems(tasks) {
+  const validKeys = new Set(tasks.map((item, index) => itemKey(item, index)));
+  let saved = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DONE_STORAGE_KEY) || "[]");
+    if (Array.isArray(parsed))
+      saved = parsed.filter(
+        (key) => typeof key === "string" && validKeys.has(key),
+      );
+  } catch {
+    saved = [];
+  }
+  doneItems.clear();
+  saved.forEach((key) => doneItems.add(key));
+  saveDoneItems();
 }
 
 function safeMarkdownUrl(value) {
@@ -124,7 +175,7 @@ function safeMarkdownUrl(value) {
 }
 
 function renderFormattedLine(target, line) {
-  const pattern = /(\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\))/g;
+  const pattern = /(\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\)|(?<![\p{L}\p{N}])_([^_\n]+)_(?![\p{L}\p{N}]))/gu;
   let cursor = 0;
   for (const match of line.matchAll(pattern)) {
     target.append(document.createTextNode(line.slice(cursor, match.index)));
@@ -132,6 +183,10 @@ function renderFormattedLine(target, line) {
       const strong = document.createElement("strong");
       strong.textContent = match[2];
       target.append(strong);
+    } else if (match[5] !== undefined) {
+      const emphasis = document.createElement("em");
+      emphasis.textContent = match[5];
+      target.append(emphasis);
     } else {
       const href = safeMarkdownUrl(match[4]);
       if (href) {
@@ -178,7 +233,9 @@ function createItem(item, index) {
   checkbox.checked = doneItems.has(key);
   checkbox.setAttribute(
     "aria-label",
-    `Označit „${item.name || "položku"}“ jako hotové`,
+    checkbox.checked
+      ? `Vrátit „${item.name || "položku"}“ mezi aktivní`
+      : `Označit „${item.name || "položku"}“ jako hotové`,
   );
   main.className = "item-main";
   title.className = "item-name";
@@ -227,8 +284,17 @@ function createItem(item, index) {
     article.append(quizButton);
   }
   checkbox.addEventListener("change", () => {
-    checkbox.checked ? doneItems.add(key) : doneItems.delete(key);
-    render();
+    if (checkbox.checked) {
+      doneItems.add(key);
+      saveDoneItems();
+      checkbox.disabled = true;
+      article.closest(".items")?.completeItem?.(key);
+    } else {
+      doneItems.delete(key);
+      saveDoneItems();
+      checkbox.disabled = true;
+      article.closest(".items")?.completeItem?.(key);
+    }
   });
   return article;
 }
@@ -246,9 +312,15 @@ function render() {
   for (const [type, [listId, countId]] of Object.entries(CATEGORIES)) {
     const list = document.getElementById(listId),
       section = list.closest(".category"),
-      items = active.filter(({ item }) => itemType(item) === type);
+      items = active.filter(
+        ({ item, index }) =>
+          itemType(item) === type && !doneItems.has(itemKey(item, index)),
+      );
     section.hidden = items.length === 0;
     document.getElementById(countId).textContent = String(items.length);
+    if (!list.restoreItemKey)
+      list.restoreItemKey =
+        list.querySelector(".item.is-active")?.dataset.itemKey || "";
     list.replaceChildren();
     items.sort(
       (a, b) =>
@@ -258,10 +330,26 @@ function render() {
     for (const entry of items) list.append(createItem(entry.item, entry.index));
     list.refreshCarousel?.();
   }
+  const completedList = document.getElementById("completedList"),
+    completedSection = completedList.closest(".category"),
+    completed = active.filter(({ item, index }) =>
+      doneItems.has(itemKey(item, index)),
+    );
+  completedSection.hidden = completed.length === 0;
+  document.getElementById("completedCount").textContent = String(
+    completed.length,
+  );
+  if (!completedList.restoreItemKey)
+    completedList.restoreItemKey =
+      completedList.querySelector(".item.is-active")?.dataset.itemKey || "";
+  completedList.replaceChildren();
+  for (const entry of completed)
+    completedList.append(createItem(entry.item, entry.index));
+  completedList.refreshCarousel?.();
 }
 
 function initCarousels() {
-  for (const [listId] of Object.values(CATEGORIES)) {
+  for (const listId of CAROUSEL_LISTS) {
     const list = document.getElementById(listId),
       header = list.closest(".category").querySelector(".category-head"),
       controls = document.createElement("div"),
@@ -327,9 +415,18 @@ function initCarousels() {
     header.append(controls);
     const update = () => {
       const allCards = cards(),
-        total = realCards().length,
         current = index(),
-        logical = total ? current % total : 0;
+        visibleCards = realCards().filter(
+          (card) => card.dataset.itemKey !== list.completingKey,
+        ),
+        total = visibleCards.length,
+        currentKey = allCards[current]?.dataset.itemKey,
+        activeKey =
+          currentKey === list.completingKey ? list.restoreItemKey : currentKey,
+        visibleIndex = visibleCards.findIndex(
+          (card) => card.dataset.itemKey === activeKey,
+        ),
+        logical = visibleIndex >= 0 ? visibleIndex : 0;
       position.textContent = total ? `${logical + 1} / ${total}` : "";
       previous.disabled = total < 2;
       next.disabled = total < 2;
@@ -345,9 +442,11 @@ function initCarousels() {
       });
     };
     list.refreshCarousel = () => {
+      list.classList.add("is-refreshing");
       list.querySelectorAll(".is-clone").forEach((clone) => clone.remove());
       const originals = realCards();
       list.classList.toggle("is-single", originals.length === 1);
+      delete list.completingKey;
       if (originals.length > 1) {
         const clone = (card) => {
           const copy = card.cloneNode(true),
@@ -362,10 +461,17 @@ function initCarousels() {
           copy.inert = true;
           if (checkbox)
             checkbox.addEventListener("change", () => {
-              checkbox.checked
-                ? doneItems.add(copy.dataset.itemKey)
-                : doneItems.delete(copy.dataset.itemKey);
-              render();
+              if (checkbox.checked) {
+                doneItems.add(copy.dataset.itemKey);
+                saveDoneItems();
+                checkbox.disabled = true;
+                list.completeItem(copy.dataset.itemKey);
+              } else {
+                doneItems.delete(copy.dataset.itemKey);
+                saveDoneItems();
+                checkbox.disabled = true;
+                list.completeItem(copy.dataset.itemKey);
+              }
             });
           if (solutionButton && solution)
             solutionButton.addEventListener("click", () => {
@@ -392,17 +498,70 @@ function initCarousels() {
         list.prepend(group(), group());
         list.append(group(), group());
         list.makeCloneGroup = group;
-        requestAnimationFrame(() => {
-          goTo(originals.length * 2, "instant");
+        const restoredIndex = Math.max(
+          0,
+          originals.findIndex(
+            (card) => card.dataset.itemKey === list.restoreItemKey,
+          ),
+        );
+        delete list.restoreItemKey;
+        const restorePosition = () => {
+          goTo(originals.length * 2 + restoredIndex, "instant");
           update();
-        });
+        };
+        if (list.clientWidth) restorePosition();
+        else requestAnimationFrame(restorePosition);
       } else {
+        delete list.restoreItemKey;
         goTo(0, "instant");
         update();
+      }
+      requestAnimationFrame(() => list.classList.remove("is-refreshing"));
+    };
+    list.completeItem = (key) => {
+      const allCards = cards(),
+        current = index(),
+        total = realCards().length,
+        next =
+          total > 1
+            ? allCards
+                .slice(current + 1)
+                .find((card) => card.dataset.itemKey !== key)
+            : null,
+        nextIndex = next ? allCards.indexOf(next) : current;
+      list.completingKey = key;
+      list.restoreItemKey = next?.dataset.itemKey || "";
+      allCards
+        .filter((card) => card.dataset.itemKey === key)
+        .forEach((card) => {
+          card.classList.add("is-completing");
+          card.classList.toggle("is-last-completing", total === 1);
+        });
+      const count = list.closest(".category").querySelector(".count");
+      count.textContent = String(Math.max(0, total - 1));
+      update();
+      clearTimeout(list.completionTimer);
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        list.removeEventListener("scrollend", finish);
+        clearTimeout(list.completionTimer);
+        render();
+      };
+      if (next) {
+        list.addEventListener("scrollend", finish, { once: true });
+        goTo(nextIndex);
+        list.completionTimer = setTimeout(finish, 700);
+      } else {
+        const activeCard = allCards[current];
+        activeCard?.addEventListener("transitionend", finish, { once: true });
+        list.completionTimer = setTimeout(finish, 350);
       }
     };
     const ensureBuffer = () => {
       const total = realCards().length;
+      if (list.completingKey) return;
       if (total < 2 || !list.makeCloneGroup) return;
       const current = index(),
         all = cards().length;
@@ -691,6 +850,8 @@ function showLocked() {
     document.getElementById(listId).replaceChildren();
     document.getElementById(countId).textContent = "0";
   }
+  document.getElementById("completedList").replaceChildren();
+  document.getElementById("completedCount").textContent = "0";
   document.getElementById("pageVersion").textContent = "";
   document.getElementById("dbVersion").textContent = "";
   document.getElementById("quizView").hidden = true;
@@ -733,6 +894,7 @@ unlockForm.addEventListener("submit", async (event) => {
       throw new Error("Šifrovaný datový soubor není platný JSON.");
     }
     unlockedData = await decryptEnvelope(envelope, password);
+    restoreDoneItems(unlockedData.tasks);
     render();
     document.getElementById("pageVersion").textContent = `Web ${PAGE_VERSION}`;
     document.getElementById("dbVersion").textContent =

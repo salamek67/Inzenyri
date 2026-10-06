@@ -18,6 +18,8 @@
         --violet-soft: #eee9ff;
         --blue: #3c82f6;
         --blue-soft: #e7f0ff;
+        --green: #24855b;
+        --green-soft: #e4f6ed;
         --coral: #ec6c68;
         --coral-soft: #fff0ed;
         --danger: #c64242;
@@ -36,6 +38,8 @@
         --violet-soft: #30294b;
         --blue: #79aaff;
         --blue-soft: #1f304d;
+        --green: #6fd3a3;
+        --green-soft: #1d3c31;
         --coral: #ff918c;
         --coral-soft: #482c31;
         --danger: #ff918c;
@@ -223,6 +227,10 @@
         --accent: var(--blue);
         --tint: var(--blue-soft);
       }
+      .completed {
+        --accent: var(--green);
+        --tint: var(--green-soft);
+      }
       .category-head {
         display: flex;
         align-items: center;
@@ -300,6 +308,11 @@
         scroll-snap-type: none;
         scroll-behavior: auto;
         user-select: none;
+      }
+      .items.is-refreshing,
+      .items.is-refreshing .item {
+        scroll-behavior: auto !important;
+        transition: none !important;
       }
       .item {
         flex: 0 0 calc(100% - 9%);
@@ -435,6 +448,14 @@
         filter: blur(0);
         transform: scale(1);
         box-shadow: 0 20px 45px #3a2e6526;
+      }
+      .item.is-completing {
+        pointer-events: none;
+      }
+      .item.is-completing.is-last-completing {
+        opacity: 0 !important;
+        filter: blur(4px) !important;
+        transform: scale(0.94) !important;
       }
       .item.is-done {
         opacity: 0.38;
@@ -721,6 +742,14 @@
             <span id="eventsCount" class="count">0</span>
           </header>
           <div id="eventsList" class="items" aria-live="polite"></div>
+        </section>
+        <section class="category completed" hidden>
+          <header class="category-head">
+            <span class="category-icon">✓</span>
+            <h2>Dokončené</h2>
+            <span id="completedCount" class="count">0</span>
+          </header>
+          <div id="completedList" class="items" aria-live="polite"></div>
         </section>
       </section>
       <footer class="site-footer">
