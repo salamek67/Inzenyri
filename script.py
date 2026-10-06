@@ -19,6 +19,7 @@ TYPES = {"task": "Úkol", "test": "Test", "event": "Akce"}
 COMMANDS = (
     "add",
     "edit",
+    "info",
     "list",
     "delete",
     "encrypt",
@@ -707,6 +708,51 @@ def edit_value(label, current, *, multiline=False, clearable=False):
     return value.replace("\\n", "\n") if multiline else value
 
 
+def info(index=None):
+    data, _ = open_data()
+    items = current(data)
+    display(items)
+    if not items:
+        return
+
+    item = items[parse_item_index(index, len(items), "Index k zobrazení")]
+    heading(item.get("name") or "Bez názvu", TYPES.get(item.get("type"), "Položka"))
+    print(f"  {muted('Datum:')} {item.get('date') or 'neuvedeno'}")
+    print(f"  {muted('Popis:')} {item.get('task') or '—'}")
+    if item.get("solution"):
+        print(f"  {muted('Řešení:')} {item['solution']}")
+
+    quiz = item.get("quiz")
+    questions = quiz.get("questions", []) if isinstance(quiz, dict) else []
+    if not questions:
+        print(f"  {muted('Procvičování:')} —")
+        return
+    shuffle = "ano" if quiz.get("shuffle") else "ne"
+    print(f"  {muted('Procvičování:')} {len(questions)} otázek · promíchání: {shuffle}")
+    for number, question in enumerate(questions, 1):
+        if not isinstance(question, dict):
+            print(f"\n  {accent(str(number) + '.')} {style('Neplatná otázka', '31')}")
+            continue
+        kind = question.get("type")
+        prompt = question.get("prompt") or question.get("sentence") or "Bez zadání"
+        print(f"\n  {accent(str(number) + '.')} {bold(prompt)}")
+        if kind == "choice":
+            options = question.get("options", [])
+            answer = question.get("answer")
+            for option_index, option in enumerate(options):
+                marker = "✓" if option_index == answer else "·"
+                print(f"      {marker} {option}")
+        else:
+            answers = question.get("answers", [])
+            if kind == "punctuation":
+                print(f"      {muted('Věta:')} {question.get('sentence', '')}")
+            print(f"      {muted('Odpověď:')} {' | '.join(map(str, answers)) or '—'}")
+            ignore_case = "ano" if question.get("ignoreCase") else "ne"
+            print(f"      {muted('Ignorovat velikost:')} {ignore_case}")
+        if question.get("explanation"):
+            print(f"      {muted('Vysvětlení:')} {question['explanation']}")
+
+
 def edit(index=None):
     data, password = open_data()
     items = current(data)
@@ -905,6 +951,7 @@ def help_text():
     heading("Příkazy", "Příkaz můžeš napsat celý nebo použít krátkou zkratku.")
     command("add [u|t|a]", "Přidat", "nový úkol, test nebo akci")
     command("edit [id]", "Upravit", "změnit existující položku")
+    command("info [id]", "Detail", "zobrazit položku a procvičování")
     command("list", "Přehled", "vypsat aktuální položky")
     command("delete [id…]", "Smazat", "odstranit indexy nebo rozsahy")
     command("encrypt", "Zašifrovat", "použít uložené heslo")
@@ -913,7 +960,7 @@ def help_text():
     command("commit [text]", "Publikovat", "commit a push na GitHub")
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
-    print(f"\n  {muted('Příklady:')} add u · edit 2 · delete 2 4 · delete 2-5\n")
+    print(f"\n  {muted('Příklady:')} add u · info 2 · edit 2 · delete 2-5\n")
 
 
 def dispatch(cmd, args=()):
@@ -930,6 +977,10 @@ def dispatch(cmd, args=()):
         add(args[0] if args else None)
     elif cmd in {"l", "list", "ls"}:
         listing()
+    elif cmd in {"i", "info", "detail"}:
+        if len(args) > 1:
+            raise DataError("Příkaz info přijímá nejvýše jeden index.")
+        info(args[0] if args else None)
     elif cmd in {"e", "edit", "upravit"}:
         if len(args) > 1:
             raise DataError("Příkaz edit přijímá nejvýše jeden index.")
