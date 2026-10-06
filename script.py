@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import copy
 import base64, getpass, hashlib, json, os, shlex, subprocess, sys, tempfile
 import re
 from datetime import date, datetime
@@ -17,6 +18,7 @@ AAD = b"inzenyri-data:v1"
 TYPES = {"task": "Úkol", "test": "Test", "event": "Akce"}
 COMMANDS = (
     "add",
+    "edit",
     "list",
     "delete",
     "encrypt",
@@ -683,6 +685,90 @@ def parse_delete_indices(arguments, item_count):
     return indices
 
 
+def parse_item_index(value, item_count, prompt):
+    raw = str(value).strip() if value is not None else ask(prompt)
+    if not raw.isdigit():
+        raise DataError("Index musí být nezáporné celé číslo.")
+    index = int(raw)
+    if index >= item_count:
+        raise DataError(f"Index {index} neexistuje.")
+    return index
+
+
+def edit_value(label, current, *, multiline=False, clearable=False):
+    hint = "Enter = ponechat"
+    if clearable:
+        hint += ", - = smazat"
+    value = ask(f"{label} ({hint})")
+    if not value:
+        return current
+    if clearable and value == "-":
+        return ""
+    return value.replace("\\n", "\n") if multiline else value
+
+
+def edit(index=None):
+    data, password = open_data()
+    items = current(data)
+    display(items)
+    if not items:
+        return
+
+    target = items[parse_item_index(index, len(items), "Index k úpravě")]
+    updated = copy.deepcopy(target)
+    heading(
+        f"Upravit · {target.get('name', 'Bez názvu')}",
+        "Enter ponechá současnou hodnotu; pomlčka smaže volitelný text.",
+    )
+    updated["name"] = edit_value("Název", str(updated.get("name", "")))
+    new_date = edit_value("Datum (dd.mm.yyyy)", str(updated.get("date", "")))
+    if not parse_date(new_date):
+        raise DataError("Neplatné datum.")
+    updated["date"] = new_date
+    updated["task"] = edit_value(
+        "Popis", str(updated.get("task", "")), multiline=True, clearable=True
+    )
+    if updated.get("type") == "task":
+        updated["solution"] = edit_value(
+            "Řešení v Markdownu",
+            str(updated.get("solution", "")),
+            multiline=True,
+            clearable=True,
+        )
+
+    if updated.get("type") == "test" or "quiz" in updated:
+        while True:
+            action = (
+                ask("Procvičování [p]onechat / [u]pravit / [s]mazat").lower() or "p"
+            )
+            if action in {"p", "ponechat"}:
+                break
+            if action in {"u", "upravit"}:
+                quiz = build_practice()
+                if quiz:
+                    updated["quiz"] = quiz
+                else:
+                    updated.pop("quiz", None)
+                break
+            if action in {"s", "smazat"}:
+                updated.pop("quiz", None)
+                break
+            cli_error("Vyber p, u nebo s.")
+
+    if updated == target:
+        warning("Nebyla provedena žádná změna.")
+        return
+    heading("Náhled upravené položky")
+    display([updated])
+    if ask("Uložit změny? [a/n]").lower() not in {"a", "ano"}:
+        print("Zrušeno.")
+        return
+    target.clear()
+    target.update(updated)
+    save(data, password)
+    success("Položka byla upravena v privátních datech a znovu zašifrována.")
+
+
 def delete(arguments=()):
     data, password = open_data()
     items = current(data)
@@ -818,6 +904,7 @@ def commit(message=None):
 def help_text():
     heading("Příkazy", "Příkaz můžeš napsat celý nebo použít krátkou zkratku.")
     command("add [u|t|a]", "Přidat", "nový úkol, test nebo akci")
+    command("edit [id]", "Upravit", "změnit existující položku")
     command("list", "Přehled", "vypsat aktuální položky")
     command("delete [id…]", "Smazat", "odstranit indexy nebo rozsahy")
     command("encrypt", "Zašifrovat", "použít uložené heslo")
@@ -826,7 +913,7 @@ def help_text():
     command("commit [text]", "Publikovat", "commit a push na GitHub")
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
-    print(f"\n  {muted('Příklady:')} add u · add t · add a · delete 2 4 · delete 2-5\n")
+    print(f"\n  {muted('Příklady:')} add u · edit 2 · delete 2 4 · delete 2-5\n")
 
 
 def dispatch(cmd, args=()):
@@ -843,6 +930,10 @@ def dispatch(cmd, args=()):
         add(args[0] if args else None)
     elif cmd in {"l", "list", "ls"}:
         listing()
+    elif cmd in {"e", "edit", "upravit"}:
+        if len(args) > 1:
+            raise DataError("Příkaz edit přijímá nejvýše jeden index.")
+        edit(args[0] if args else None)
     elif cmd in {"d", "delete", "del"}:
         delete(args)
     elif cmd in {"c", "commit", "push"}:
