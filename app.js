@@ -1,5 +1,5 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.3.0";
+const PAGE_VERSION = "2.4.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -174,7 +174,7 @@ function safeMarkdownUrl(value) {
   }
 }
 
-function renderFormattedLine(target, line) {
+function renderMarkdownInline(target, line) {
   const pattern = /(\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\)|(?<![\p{L}\p{N}])_([^_\n]+)_(?![\p{L}\p{N}]))/gu;
   let cursor = 0;
   for (const match of line.matchAll(pattern)) {
@@ -201,6 +201,165 @@ function renderFormattedLine(target, line) {
     cursor = match.index + match[0].length;
   }
   target.append(document.createTextNode(line.slice(cursor)));
+}
+
+function closingBracket(value, start, opening, closing) {
+  let depth = 0;
+  for (let index = start; index < value.length; index++) {
+    if (value[index] === opening) depth++;
+    else if (value[index] === closing && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function renderMath(target, value) {
+  let cursor = 0;
+  while (cursor < value.length) {
+    if (value.startsWith("**", cursor)) {
+      const end = value.indexOf("**", cursor + 2);
+      if (end >= 0) {
+        const strong = document.createElement("strong");
+        renderMath(strong, value.slice(cursor + 2, end));
+        target.append(strong);
+        cursor = end + 2;
+        continue;
+      }
+    }
+    if (value[cursor] === "_") {
+      const end = value.indexOf("_", cursor + 1);
+      if (end >= 0) {
+        const emphasis = document.createElement("em");
+        renderMath(emphasis, value.slice(cursor + 1, end));
+        target.append(emphasis);
+        cursor = end + 1;
+        continue;
+      }
+    }
+    const command = [
+      ["/approxeq", "≈"],
+      ["/aproxeq", "≈"],
+      ["/approx", "≈"],
+      ["/cdot", "·"],
+    ].find(([candidate]) => value.startsWith(candidate, cursor));
+    if (command) {
+      target.append(document.createTextNode(command[1]));
+      cursor += command[0].length;
+      continue;
+    }
+    if (value[cursor] === "*") {
+      target.append(document.createTextNode("·"));
+      cursor++;
+      continue;
+    }
+    if (value.startsWith("sqrt", cursor)) {
+      const opening = value[cursor + 4];
+      if (opening === "(" || opening === "{") {
+        const closing = opening === "(" ? ")" : "}",
+          end = closingBracket(value, cursor + 4, opening, closing);
+        if (end >= 0) {
+          const root = document.createElement("span"),
+            sign = document.createElement("span"),
+            radicand = document.createElement("span");
+          root.className = "math-root";
+          sign.className = "math-root-sign";
+          sign.textContent = "√";
+          radicand.className = "math-radicand";
+          renderMath(radicand, value.slice(cursor + 5, end));
+          root.append(sign, radicand);
+          target.append(root);
+          cursor = end + 1;
+          continue;
+        }
+      }
+      target.append(document.createTextNode("√"));
+      cursor += 4;
+      continue;
+    }
+    if (value[cursor] === "^") {
+      let exponent = "",
+        consumed = 1;
+      if (value[cursor + 1] === "{") {
+        const end = closingBracket(value, cursor + 1, "{", "}");
+        if (end >= 0) {
+          exponent = value.slice(cursor + 2, end);
+          consumed = end - cursor + 1;
+        }
+      } else {
+        const match = value
+          .slice(cursor + 1)
+          .match(/^-?[\p{L}\p{N}]+(?:[.,][0-9]+)?/u);
+        if (match) {
+          exponent = match[0];
+          consumed += exponent.length;
+        }
+      }
+      if (exponent) {
+        const superscript = document.createElement("sup");
+        renderMath(superscript, exponent);
+        target.append(superscript);
+        cursor += consumed;
+        continue;
+      }
+    }
+    if (value[cursor] === "\\" && value[cursor + 1] === "$") {
+      target.append(document.createTextNode("$"));
+      cursor += 2;
+      continue;
+    }
+    target.append(document.createTextNode(value[cursor]));
+    cursor++;
+  }
+}
+
+function findMathEnd(line, start) {
+  for (let index = start; index < line.length; index++) {
+    if (line[index] === "\\" && line[index + 1] === "$") index++;
+    else if (line[index] === "$") return index;
+  }
+  return -1;
+}
+
+function renderFormattedLine(target, line) {
+  let cursor = 0,
+    textStart = 0;
+  while (cursor < line.length) {
+    if (line[cursor] === "\\" && line[cursor + 1] === "$") {
+      cursor += 2;
+      continue;
+    }
+    if (line[cursor] !== "$") {
+      cursor++;
+      continue;
+    }
+    const end = findMathEnd(line, cursor + 1);
+    if (end < 0) break;
+    const boldWrapper =
+        cursor >= 2 &&
+        line.slice(cursor - 2, cursor) === "**" &&
+        line.slice(end + 1, end + 3) === "**",
+      italicWrapper =
+        !boldWrapper &&
+        cursor >= 1 &&
+        line[cursor - 1] === "_" &&
+        line[end + 1] === "_",
+      wrapperStart = boldWrapper ? cursor - 2 : italicWrapper ? cursor - 1 : cursor,
+      wrapperEnd = boldWrapper ? end + 3 : italicWrapper ? end + 2 : end + 1;
+    renderMarkdownInline(
+      target,
+      line.slice(textStart, wrapperStart).replace(/\\\$/g, "$"),
+    );
+    const math = document.createElement("span");
+    math.className = "math-expression";
+    renderMath(math, line.slice(cursor + 1, end));
+    if (boldWrapper || italicWrapper) {
+      const wrapper = document.createElement(boldWrapper ? "strong" : "em");
+      wrapper.append(math);
+      target.append(wrapper);
+    } else target.append(math);
+    cursor = wrapperEnd;
+    textStart = cursor;
+  }
+  renderMarkdownInline(target, line.slice(textStart).replace(/\\\$/g, "$"));
 }
 
 function renderFormattedText(target, value) {

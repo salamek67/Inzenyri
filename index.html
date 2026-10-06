@@ -372,6 +372,32 @@
         text-decoration-thickness: 1.5px;
         text-underline-offset: 0.16em;
       }
+      .math-expression {
+        display: inline;
+        font-family: "Cambria Math", "STIX Two Math", Georgia, serif;
+        font-size: 1.04em;
+        white-space: nowrap;
+      }
+      .math-expression sup {
+        position: relative;
+        top: -0.2em;
+        font-size: 0.72em;
+        line-height: 0;
+      }
+      .math-root {
+        display: inline-flex;
+        align-items: flex-start;
+      }
+      .math-root-sign {
+        font-size: 1.12em;
+        line-height: 1;
+      }
+      .math-radicand {
+        min-width: 0.35em;
+        padding: 0.05em 0.06em 0;
+        border-top: 1px solid currentColor;
+        line-height: 1.05;
+      }
       .solution {
         margin-top: 12px;
         padding: 13px;

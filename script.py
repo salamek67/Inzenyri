@@ -696,11 +696,34 @@ def parse_item_index(value, item_count, prompt):
     return index
 
 
+def ask_editable(prompt, current):
+    editable = str(current).replace("\n", "\\n")
+    try:
+        import readline
+    except ImportError:
+        print(f"  {muted('Současná hodnota:')} {editable}")
+        return ask(prompt)
+
+    previous_completer = readline.get_completer()
+
+    def prefill():
+        readline.insert_text(editable)
+        readline.redisplay()
+
+    readline.set_completer(None)
+    readline.set_startup_hook(prefill)
+    try:
+        return input(f"  {accent('›')} {prompt}: ").strip()
+    finally:
+        readline.set_startup_hook()
+        readline.set_completer(previous_completer)
+
+
 def edit_value(label, current, *, multiline=False, clearable=False):
-    hint = "Enter = ponechat"
+    hint = "uprav šipkami, Enter = potvrdit"
     if clearable:
         hint += ", - = smazat"
-    value = ask(f"{label} ({hint})")
+    value = ask_editable(f"{label} ({hint})", current)
     if not value:
         return current
     if clearable and value == "-":
@@ -764,7 +787,7 @@ def edit(index=None):
     updated = copy.deepcopy(target)
     heading(
         f"Upravit · {target.get('name', 'Bez názvu')}",
-        "Enter ponechá současnou hodnotu; pomlčka smaže volitelný text.",
+        "Text je předvyplněný; šipkami oprav jen potřebnou část.",
     )
     updated["name"] = edit_value("Název", str(updated.get("name", "")))
     new_date = edit_value("Datum (dd.mm.yyyy)", str(updated.get("date", "")))
@@ -961,6 +984,10 @@ def help_text():
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
     print(f"\n  {muted('Příklady:')} add u · info 2 · edit 2 · delete 2-5\n")
+    print(
+        f"  {muted('Matematika:')} $a /cdot sqrt(x)^2 /aproxeq y$ · obyčejný dolar: \\$\n"
+    )
+    print(f"  {muted('Kombinace:')} **$x^2$** · $výsledek = **42**$\n")
 
 
 def dispatch(cmd, args=()):
