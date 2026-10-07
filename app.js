@@ -1,5 +1,5 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.4.3";
+const PAGE_VERSION = "2.4.4";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -174,35 +174,6 @@ function safeMarkdownUrl(value) {
   }
 }
 
-function renderMarkdownInline(target, line) {
-  const pattern = /(\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\)|(?<![\p{L}\p{N}])_([^_\n]+)_(?![\p{L}\p{N}]))/gu;
-  let cursor = 0;
-  for (const match of line.matchAll(pattern)) {
-    target.append(document.createTextNode(line.slice(cursor, match.index)));
-    if (match[2] !== undefined) {
-      const strong = document.createElement("strong");
-      strong.textContent = match[2];
-      target.append(strong);
-    } else if (match[5] !== undefined) {
-      const emphasis = document.createElement("em");
-      emphasis.textContent = match[5];
-      target.append(emphasis);
-    } else {
-      const href = safeMarkdownUrl(match[4]);
-      if (href) {
-        const link = document.createElement("a");
-        link.textContent = match[3];
-        link.href = href;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        target.append(link);
-      } else target.append(document.createTextNode(match[0]));
-    }
-    cursor = match.index + match[0].length;
-  }
-  target.append(document.createTextNode(line.slice(cursor)));
-}
-
 function closingBracket(value, start, opening, closing) {
   let depth = 0;
   for (let index = start; index < value.length; index++) {
@@ -306,72 +277,110 @@ function renderMath(target, value) {
       cursor += 2;
       continue;
     }
+    if (value[cursor] === "\n") {
+      target.append(document.createElement("br"));
+      cursor++;
+      continue;
+    }
     target.append(document.createTextNode(value[cursor]));
     cursor++;
   }
 }
 
-function findMathEnd(line, start) {
-  for (let index = start; index < line.length; index++) {
-    if (line[index] === "\\" && line[index + 1] === "$") index++;
-    else if (line[index] === "$") return index;
+function findMathEnd(value, start) {
+  for (let index = start; index < value.length; index++) {
+    if (value[index] === "\\" && value[index + 1] === "$") index++;
+    else if (value[index] === "$") return index;
   }
   return -1;
 }
 
-function renderFormattedLine(target, line) {
-  let cursor = 0,
-    textStart = 0;
-  while (cursor < line.length) {
-    if (line[cursor] === "\\" && line[cursor + 1] === "$") {
+function findMarkdownEnd(value, start, marker) {
+  const end = value.indexOf(marker, start + marker.length);
+  return end > start + marker.length ? end : -1;
+}
+
+function renderFormattedInline(target, value) {
+  let cursor = 0;
+  while (cursor < value.length) {
+    if (value[cursor] === "\\" && value[cursor + 1] === "$") {
+      target.append(document.createTextNode("$"));
       cursor += 2;
       continue;
     }
-    if (line[cursor] !== "$") {
+    if (value.startsWith("**", cursor)) {
+      const end = findMarkdownEnd(value, cursor, "**");
+      if (end >= 0) {
+        const strong = document.createElement("strong");
+        renderFormattedInline(strong, value.slice(cursor + 2, end));
+        target.append(strong);
+        cursor = end + 2;
+        continue;
+      }
+    }
+    if (value[cursor] === "_") {
+      const before = value[cursor - 1] || "",
+        end = findMarkdownEnd(value, cursor, "_"),
+        after = end >= 0 ? value[end + 1] || "" : "";
+      if (
+        end >= 0 &&
+        !/[\p{L}\p{N}]/u.test(before) &&
+        !/[\p{L}\p{N}]/u.test(after)
+      ) {
+        const emphasis = document.createElement("em");
+        renderFormattedInline(emphasis, value.slice(cursor + 1, end));
+        target.append(emphasis);
+        cursor = end + 1;
+        continue;
+      }
+    }
+    if (value[cursor] === "$") {
+      const end = findMathEnd(value, cursor + 1);
+      if (end >= 0) {
+        const math = document.createElement("span");
+        math.className = "math-expression";
+        renderMath(math, value.slice(cursor + 1, end));
+        target.append(math);
+        cursor = end + 1;
+        continue;
+      }
+    }
+    if (value[cursor] === "[") {
+      const match = value.slice(cursor).match(/^\[([^\]]+)\]\(([^\s)]+)\)/u);
+      if (match) {
+        const href = safeMarkdownUrl(match[2]);
+        if (href) {
+          const link = document.createElement("a");
+          link.textContent = match[1];
+          link.href = href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          target.append(link);
+        } else target.append(document.createTextNode(match[0]));
+        cursor += match[0].length;
+        continue;
+      }
+    }
+    if (value[cursor] === "\n") {
+      target.append(document.createElement("br"));
       cursor++;
       continue;
     }
-    const end = findMathEnd(line, cursor + 1);
-    if (end < 0) break;
-    const boldWrapper =
-        cursor >= 2 &&
-        line.slice(cursor - 2, cursor) === "**" &&
-        line.slice(end + 1, end + 3) === "**",
-      italicWrapper =
-        !boldWrapper &&
-        cursor >= 1 &&
-        line[cursor - 1] === "_" &&
-        line[end + 1] === "_",
-      wrapperStart = boldWrapper ? cursor - 2 : italicWrapper ? cursor - 1 : cursor,
-      wrapperEnd = boldWrapper ? end + 3 : italicWrapper ? end + 2 : end + 1;
-    renderMarkdownInline(
-      target,
-      line.slice(textStart, wrapperStart).replace(/\\\$/g, "$"),
-    );
-    const math = document.createElement("span");
-    math.className = "math-expression";
-    renderMath(math, line.slice(cursor + 1, end));
-    if (boldWrapper || italicWrapper) {
-      const wrapper = document.createElement(boldWrapper ? "strong" : "em");
-      wrapper.append(math);
-      target.append(wrapper);
-    } else target.append(math);
-    cursor = wrapperEnd;
-    textStart = cursor;
+    let end = cursor + 1;
+    while (
+      end < value.length &&
+      !["\\", "*", "_", " ", "$", "[", "\n"].includes(value[end])
+    )
+      end++;
+    target.append(document.createTextNode(value.slice(cursor, end)));
+    cursor = end;
   }
-  renderMarkdownInline(target, line.slice(textStart).replace(/\\\$/g, "$"));
 }
 
 function renderFormattedText(target, value) {
-  const fragment = document.createDocumentFragment();
-  const lines = String(value ?? "")
-    .replace(/\\n/g, "\n")
-    .split("\n");
-  lines.forEach((line, lineIndex) => {
-    renderFormattedLine(fragment, line);
-    if (lineIndex < lines.length - 1)
-      fragment.append(document.createElement("br"));
-  });
+  const fragment = document.createDocumentFragment(),
+    text = String(value ?? "").replace(/\\n/g, "\n");
+  renderFormattedInline(fragment, text);
   target.replaceChildren(fragment);
 }
 
