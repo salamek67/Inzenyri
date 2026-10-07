@@ -1,5 +1,5 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.4.2";
+const PAGE_VERSION = "2.4.3";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -741,7 +741,10 @@ function initCarousels() {
       startX = 0,
       startScroll = 0;
     list.addEventListener("pointerdown", (event) => {
-      if (event.pointerType === "touch" || event.target.closest("button,input"))
+      if (
+        event.pointerType === "touch" ||
+        event.target.closest("a,button,input,select,textarea,label")
+      )
         return;
       dragging = true;
       startX = event.clientX;
