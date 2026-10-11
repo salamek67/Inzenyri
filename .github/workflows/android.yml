@@ -44,8 +44,13 @@ jobs:
       - name: Build debug APK
         working-directory: app
         env:
-          GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID }}
-        run: gradle assembleDebug -PgithubAppClientId="$GH_APP_CLIENT_ID"
+          GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
+        run: |
+          if [ -z "$GH_APP_CLIENT_ID" ]; then
+            echo "::error::Set GH_APP_CLIENT_ID in repository Actions Variables (or Secrets) to enable maintainer GitHub login."
+            exit 1
+          fi
+          gradle assembleDebug -PgithubAppClientId="$GH_APP_CLIENT_ID"
       - name: Prepare debug APK artifact
         working-directory: app
         run: |
@@ -102,11 +107,15 @@ jobs:
       - name: Build signed release APK
         working-directory: app
         env:
-          GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID }}
+          GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          if [ -z "$GH_APP_CLIENT_ID" ]; then
+            echo "::error::Set GH_APP_CLIENT_ID in repository Actions Variables (or Secrets) to enable maintainer GitHub login."
+            exit 1
+          fi
           version="${GITHUB_REF_NAME#v}"
           gradle assembleRelease -PappVersionName="$version" -PappVersionCode="$GITHUB_RUN_NUMBER" -PgithubAppClientId="$GH_APP_CLIENT_ID"
           apk_path="$(find . -type f -path '*/outputs/apk/release/*.apk' -print -quit)"

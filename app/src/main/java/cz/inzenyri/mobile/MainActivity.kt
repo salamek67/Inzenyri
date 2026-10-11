@@ -305,15 +305,28 @@ class MainActivity : Activity() {
     }
 
     private fun askPassword(raw: String, preserveBaseline: Boolean = false) {
+        val savedPassword = readSavedDatabasePassword()
         val field = EditText(this).apply {
             hint = "Heslo k databázi"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             imeOptions = EditorInfo.IME_ACTION_DONE
+            savedPassword?.let { setText(String(it)) }
+        }
+        val savePassword = CheckBox(this).apply {
+            text = "Bezpečně uložit heslo na tomto zařízení"
+            isChecked = savedPassword != null
+        }
+        savedPassword?.fill('\u0000')
+        val dialogContent = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(4), dp(24), 0)
+            addView(field)
+            addView(savePassword, margin(0, 8, 0, 0))
         }
         android.app.AlertDialog.Builder(this)
             .setTitle("Odemknout databázi")
-            .setMessage("Heslo se uchová pouze v paměti po dobu otevření aplikace.")
-            .setView(field)
+            .setMessage("Heslo zůstává jen v zařízení a bude chráněné klíčem uloženým v Android Keystore.")
+            .setView(dialogContent)
             .setNegativeButton("Zrušit", null)
             .setPositiveButton("Odemknout", null)
             .create().also { dialog ->
@@ -331,6 +344,14 @@ class MainActivity : Activity() {
                                 runOnUiThread {
                                     password?.fill('\u0000')
                                     password = candidate
+                                    if (savePassword.isChecked) {
+                                        try { saveDatabasePassword(candidate) } catch (e: Exception) {
+                                            forgetDatabasePassword()
+                                            toast(e.message ?: "Heslo se nepodařilo bezpečně uložit.")
+                                        }
+                                    } else {
+                                        forgetDatabasePassword()
+                                    }
                                     database = parsed
                                     val savedBaseline = getSharedPreferences(DB_PREFS, MODE_PRIVATE).getString(DB_BASELINE_HASH, null)
                                     originalDatabaseHash = if (preserveBaseline && savedBaseline != null) savedBaseline else databaseHash(parsed).also {
@@ -726,6 +747,7 @@ class MainActivity : Activity() {
         if (clientId.isBlank()) {
             toast("GitHub App Client ID není nastaven. Nastav GH_APP_CLIENT_ID v Actions Variables a sestav aplikaci znovu.")
             statusView?.text = "GitHub přihlášení není nakonfigurované."
+            updateButton?.isEnabled = true
             return
         }
         val saved = readGithubCredentials()
@@ -937,16 +959,53 @@ class MainActivity : Activity() {
     }
 
     private fun tokenKey(): SecretKey {
+        return keystoreKey(TOKEN_KEY_ALIAS)
+    }
+
+    private fun databasePasswordKey(): SecretKey = keystoreKey(DATABASE_PASSWORD_KEY_ALIAS)
+
+    private fun keystoreKey(alias: String): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(TOKEN_KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        (store.getKey(alias, null) as? SecretKey)?.let { return it }
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
-            init(KeyGenParameterSpec.Builder(TOKEN_KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setRandomizedEncryptionRequired(true)
                 .build())
             generateKey()
         }
+    }
+
+    private fun saveDatabasePassword(value: CharArray) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, databasePasswordKey())
+        val encrypted = cipher.doFinal(String(value).toByteArray(StandardCharsets.UTF_8))
+        getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit()
+            .putString(SAVED_PASSWORD_IV, Base64.getEncoder().encodeToString(cipher.iv))
+            .putString(SAVED_PASSWORD_VALUE, Base64.getEncoder().encodeToString(encrypted))
+            .apply()
+    }
+
+    private fun readSavedDatabasePassword(): CharArray? {
+        return try {
+            val prefs = getSharedPreferences(DB_PREFS, MODE_PRIVATE)
+            val iv = prefs.getString(SAVED_PASSWORD_IV, null) ?: return null
+            val encrypted = prefs.getString(SAVED_PASSWORD_VALUE, null) ?: return null
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, databasePasswordKey(), GCMParameterSpec(128, Base64.getDecoder().decode(iv)))
+            String(cipher.doFinal(Base64.getDecoder().decode(encrypted)), StandardCharsets.UTF_8).toCharArray()
+        } catch (_: Exception) {
+            forgetDatabasePassword()
+            null
+        }
+    }
+
+    private fun forgetDatabasePassword() {
+        getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit()
+            .remove(SAVED_PASSWORD_IV)
+            .remove(SAVED_PASSWORD_VALUE)
+            .apply()
     }
 
     private fun saveGithubCredentials(credentials: GitHubCredentials) {
@@ -990,6 +1049,9 @@ class MainActivity : Activity() {
     }
 
     private fun checkForUpdate(silent: Boolean) {
+        updateAsset = null
+        updateButton?.text = "Zkontrolovat aktualizace aplikace"
+        if (!silent) updateButton?.isEnabled = false
         val saved = readGithubCredentials()
         if (saved != null) {
             networkWorker.execute {
@@ -999,6 +1061,7 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         statusView?.text = e.message ?: "Kontrola aktualizací se nezdařila."
                         if (!silent) toast(statusView?.text.toString())
+                        updateButton?.isEnabled = true
                     }
                 }
             }
@@ -1015,6 +1078,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     statusView?.text = "Pro kontrolu soukromých vydání použij tlačítko aktualizací a přihlas se přes GitHub."
                     if (!silent) toast(statusView?.text.toString())
+                    updateButton?.isEnabled = true
                 }
             }
         }
@@ -1033,11 +1097,13 @@ class MainActivity : Activity() {
                 updateButton?.text = "Stáhnout aktualizaci $tag"
                 statusView?.text = "Je dostupná verze $tag."
                 if (showResult) toast("Je dostupná nová verze $tag.")
+                updateButton?.isEnabled = true
             }
         } else {
             runOnUiThread {
                 statusView?.text = "Aplikace je aktuální · $current"
                 if (showResult) toast("Používáš aktuální verzi.")
+                updateButton?.isEnabled = true
             }
         }
     }

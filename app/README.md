@@ -4,11 +4,11 @@ Při prvním spuštění aplikace vytvoří soukromou složku ve svém interním
 
 Ikona klíče vpravo nahoře spustí propojení s GitHubem. Po přihlášení se zpřístupní formulář pro přidávání položek a tlačítko **Pushnout DB na origin**. Push zapíše šifrovaný soubor do `salamek67/Inzenyri`, větev `main`, pomocí GitHub Contents API. Vytvořený commit má zprávu `Update DB (dbver)`. Před zápisem aplikace zkontroluje, jestli se databáze na GitHubu mezitím nezměnila. GitHub účet musí mít pro repozitář právo zápisu.
 
-Při prvním načtení nebo pushi se aplikace přihlásí přes GitHub Device Flow. Uživatel potvrdí jednorázový kód na GitHubu; přístupový a obnovovací token aplikace ukládá šifrovaně pomocí Android Keystore. Tokeny jsou omezené oprávněními GitHub App a oprávněními přihlášeného uživatele.
+Při prvním načtení nebo pushi se aplikace přihlásí přes GitHub Device Flow. Uživatel potvrdí jednorázový kód na GitHubu; přístupový a obnovovací token aplikace ukládá šifrovaně pomocí Android Keystore. Heslo databáze lze uložit po výslovném zaškrtnutí. Je šifrované samostatným klíčem z Android Keystore a při dalším spuštění se předvyplní do dialogu. Tokeny jsou omezené oprávněními GitHub App a oprávněními přihlášeného uživatele.
 
 ## Nastavení GitHub přihlášení
 
-Vytvoř GitHub App pro tento projekt, povol **Device Flow** a nastav repository permission **Contents: Read and write**. App nainstaluj pouze do repozitáře `salamek67/Inzenyri`. Její veřejné Client ID nastav v repozitáři v **Settings → Secrets and variables → Actions → Variables** jako `GH_APP_CLIENT_ID`. Client ID není tajné; aplikace ho potřebuje pro Device Flow. Debug i release workflow ho předávají Gradlu při sestavení. Bez této proměnné lze aplikaci sestavit, ale přihlášení a push budou vypnuté.
+Vytvoř GitHub App pro tento projekt, povol **Device Flow** a nastav repository permission **Contents: Read and write**. App nainstaluj pouze do repozitáře `salamek67/Inzenyri`. Její Client ID z nastavení GitHub App vlož do repozitáře v **Settings → Secrets and variables → Actions → Variables** jako `GH_APP_CLIENT_ID` (workflow přijímá také Actions secret se stejným názvem). Client ID není tajné; aplikace ho potřebuje pro Device Flow. Workflow při prázdné hodnotě sestavení zastaví s jasnou chybou místo vytvoření APK bez funkčního přihlášení. Pro lokální sestavení nastav Gradle property `githubAppClientId` nebo proměnnou prostředí `GH_APP_CLIENT_ID`.
 
 ## APK a aktualizace
 

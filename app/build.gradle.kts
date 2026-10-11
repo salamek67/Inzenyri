@@ -8,12 +8,14 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        val githubAppClientId = providers.gradleProperty("githubAppClientId").orElse("").get()
+        val githubAppClientId = providers.gradleProperty("githubAppClientId")
+            .orElse(providers.environmentVariable("GH_APP_CLIENT_ID"))
+            .orElse("").get()
         applicationId = "cz.inzenyri.mobile"
         minSdk = 26
         targetSdk = 34
         versionCode = providers.gradleProperty("appVersionCode").orElse("1").get().toInt()
-        versionName = providers.gradleProperty("appVersionName").orElse("0.2.1").get()
+        versionName = providers.gradleProperty("appVersionName").orElse("0.2.2").get()
         buildConfigField("String", "GITHUB_APP_CLIENT_ID", "\"$githubAppClientId\"")
     }
 
