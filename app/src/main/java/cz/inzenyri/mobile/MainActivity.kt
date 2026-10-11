@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -21,10 +22,12 @@ import android.text.method.LinkMovementMethod
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.HorizontalScrollView
 import android.widget.ProgressBar
@@ -33,6 +36,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.WriterException
+import com.google.zxing.integration.android.IntentIntegrator
+import com.google.zxing.qrcode.QRCodeWriter
 import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
@@ -50,7 +57,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.crypto.AEADBadTagException
+import javax.crypto.BadPaddingException
 
 class MainActivity : Activity() {
     private val credentialStore by lazy(LazyThreadSafetyMode.NONE) { SecureCredentialStore(this) }
@@ -107,6 +114,9 @@ class MainActivity : Activity() {
     private var githubLoginOpenButton: Button? = null
     private var githubLoginCancelButton: Button? = null
     private var githubLoginStepViews = mutableListOf<TextView>()
+    private var loginPasswordInput: EditText? = null
+    private var loginUnlockButton: Button? = null
+    private var quizExitAction: (() -> Unit)? = null
 
     private val createDocument = registerForActivityResultCompat(102)
 
@@ -121,6 +131,12 @@ class MainActivity : Activity() {
         render()
         openStoredDatabaseOrClone()
         checkForUpdate(silent = true)
+    }
+
+    @Deprecated("Routes Back to the previous screen while a quiz is open")
+    override fun onBackPressed() {
+        val exitQuiz = quizExitAction
+        if (exitQuiz != null) exitQuiz() else super.onBackPressed()
     }
 
     private fun registerForActivityResultCompat(requestCode: Int): (Intent) -> Unit = { intent ->
@@ -209,6 +225,16 @@ class MainActivity : Activity() {
     @Deprecated("Uses document picker callbacks for compatibility with the platform Activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == IntentIntegrator.REQUEST_CODE) {
+            val result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
+            val contents = result?.contents
+            if (contents.isNullOrBlank()) {
+                statusView?.text = "Skenování QR kódu bylo zrušeno."
+            } else {
+                applyLoginQr(contents)
+            }
+            return
+        }
         if (requestCode == 103) {
             if (android.os.Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()) installDownloadedApk()
             return
@@ -439,39 +465,60 @@ class MainActivity : Activity() {
         confirmReplacingDatabase {
             statusView?.text = "Stahuji databázi…"
             networkWorker.execute {
+                var activePassword: CharArray? = null
                 try {
                     val token = readGithubCredentials()?.let { saved -> try { validCredentials(saved).accessToken } catch (_: Exception) { null } }
                     val raw = try { fetchRemoteDatabase(token) } catch (e: Exception) {
                         if (token == null) throw e
                         fetchRemoteDatabase()
                     }
-                    val activePassword = password?.clone()
-                    val parsed = activePassword?.let {
-                        JSONObject(String(decrypt(JSONObject(raw), it), StandardCharsets.UTF_8))
-                    }
-                    runOnUiThread {
-                        swipeRefreshLayout?.isRefreshing = false
-                        if (parsed != null) {
-                            password?.fill('\u0000')
-                            password = activePassword.clone()
-                            database = parsed
-                            sourceEnvelope = JSONObject(raw)
-                            originalDatabaseHash = databaseHash(parsed)
-                            getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, originalDatabaseHash).apply()
-                            try { saveLocalDatabase(raw) } catch (e: Exception) { toast(e.message ?: "Lokální kopii se nepodařilo uložit.") }
-                            statusView?.text = "Databáze obnovena · ${parsed.getJSONArray("tasks").length()} položek."
-                            renderDatabase()
-                        } else {
-                            statusView?.text = "Databáze stažena. Zadej heslo."
-                            askPassword(raw)
+                    activePassword = password?.clone()
+                    val refreshPassword = activePassword
+                    val parsed = refreshPassword?.let {
+                        try {
+                            JSONObject(String(decrypt(JSONObject(raw), it), StandardCharsets.UTF_8))
+                        } catch (_: BadPaddingException) {
+                            null
                         }
                     }
-        activePassword?.fill('\u0000')
+                    runOnUiThread {
+                        try {
+                            swipeRefreshLayout?.isRefreshing = false
+                            if (parsed != null) {
+                                password?.fill('\u0000')
+                                password = refreshPassword.clone()
+                                database = parsed
+                                sourceEnvelope = JSONObject(raw)
+                                originalDatabaseHash = databaseHash(parsed)
+                                getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, originalDatabaseHash).apply()
+                                try { saveLocalDatabase(raw) } catch (e: Exception) { toast(e.message ?: "Lokální kopii se nepodařilo uložit.") }
+                                statusView?.text = "Databáze obnovena · ${parsed.getJSONArray("tasks").length()} položek."
+                                renderDatabase()
+                            } else {
+                                val message = if (refreshPassword != null) {
+                                    "Uložené heslo novou databázi neodemklo. Zadej heslo k databázi z origin."
+                                } else {
+                                    "Databáze stažena. Zadej heslo."
+                                }
+                                password?.fill('\u0000')
+                                password = null
+                                askPassword(raw, initialMessage = message)
+                            }
+                        } finally {
+                            activePassword?.fill('\u0000')
+                        }
+                    }
                 } catch (e: Exception) {
+                    activePassword?.fill('\u0000')
                     runOnUiThread {
                         swipeRefreshLayout?.isRefreshing = false
-                        statusView?.text = e.message ?: "Stažení databáze se nezdařilo."
-                        toast(statusView?.text.toString())
+                        val message = if (e is BadPaddingException) {
+                            "Databázi z origin se nepodařilo odemknout. Zadej heslo k této verzi."
+                        } else {
+                            e.message ?: "Stažení databáze se nezdařilo."
+                        }
+                        statusView?.text = message
+                        toast(message)
                     }
                 }
             }
@@ -495,6 +542,14 @@ class MainActivity : Activity() {
             toggleDarkMode()
         }
         content.addView(themeButton, margin(0, 0, 0, 10))
+        content.addView(label(
+            "QR kód obsahuje heslo k databázi. Zobraz ho jen před důvěryhodnou osobou; přístup k údržbě GitHubu tím nesdílíš.",
+            14, muted, false
+        ), margin(0, 0, 0, 10))
+        content.addView(button("Zobrazit QR kód pro přihlášení") { showDatabaseLoginQr() }.apply {
+            isEnabled = password != null
+            alpha = if (isEnabled) 1f else 0.5f
+        }, margin(0, 0, 0, 10))
         updateButton = button(if (updateAsset == null) "Zkontrolovat aktualizace aplikace" else "Stáhnout dostupnou aktualizaci") {
             if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
         }
@@ -505,6 +560,85 @@ class MainActivity : Activity() {
         dialog.setCanceledOnTouchOutside(true)
         dialog.show()
         dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun showDatabaseLoginQr() {
+        val secret = password?.clone() ?: return toast("Nejdřív odemkni databázi.")
+        var bitmap: Bitmap? = null
+        try {
+            val payload = JSONObject()
+                .put("application", "inzenyri")
+                .put("purpose", "database-login")
+                .put("version", 1)
+                .put("password", String(secret))
+                .toString()
+            val size = 720
+            val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, size, size)
+            val pixels = IntArray(size * size) { index ->
+                val x = index % size
+                val y = index / size
+                if (matrix.get(x, y)) Color.BLACK else Color.WHITE
+            }
+            bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
+                setPixels(pixels, 0, size, 0, 0, size, size)
+            }
+        } catch (_: WriterException) {
+            secret.fill('\u0000')
+            return toast("Přihlašovací QR kód se nepodařilo vytvořit.")
+        } catch (e: Exception) {
+            secret.fill('\u0000')
+            return toast(e.message ?: "Přihlašovací QR kód se nepodařilo vytvořit.")
+        }
+        secret.fill('\u0000')
+
+        val dialog = Dialog(this)
+        val image = ImageView(this).apply {
+            setImageBitmap(bitmap)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "QR kód pro přihlášení k databázi"
+            setBackgroundColor(Color.WHITE)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22), dp(20), dp(22), dp(20))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
+        }
+        content.addView(label("Přihlášení přes QR kód", 21, ink, true), margin(0, 0, 0, 8))
+        content.addView(label(
+            "Kód zpřístupní heslo každému, kdo ho naskenuje. Po přihlášení ho můžeš zase zavřít.",
+            14, muted, false
+        ), margin(0, 0, 0, 14))
+        content.addView(image, LinearLayout.LayoutParams(dp(280), dp(280)))
+        content.addView(button("Zavřít") { dialog.dismiss() }, margin(0, 14, 0, 0))
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setOnDismissListener {
+            image.setImageDrawable(null)
+            bitmap?.recycle()
+            bitmap = null
+        }
+        dialog.show()
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(380)), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun applyLoginQr(contents: String) {
+        try {
+            val payload = JSONObject(contents)
+            require(payload.optString("application") == "inzenyri")
+            require(payload.optString("purpose") == "database-login" && payload.optInt("version") == 1)
+            val secret = payload.optString("password")
+            require(secret.isNotEmpty())
+            val field = loginPasswordInput ?: error("Přihlašovací formulář není dostupný.")
+            field.setText(secret)
+            field.setSelection(field.text.length)
+            loginUnlockButton?.performClick() ?: error("Tlačítko pro přihlášení není dostupné.")
+        } catch (_: Exception) {
+            statusView?.text = "QR kód neobsahuje platné přihlášení k databázi Inženýrů."
+            toast(statusView?.text.toString())
+        }
     }
 
     private fun showMaintainerWorkspace() {
@@ -619,22 +753,29 @@ class MainActivity : Activity() {
         dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun askPassword(raw: String, preserveBaseline: Boolean = false) {
+    private fun askPassword(raw: String, preserveBaseline: Boolean = false, initialMessage: String = "") {
         val savedPassword = readSavedDatabasePassword()
-        val screen = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(28), dp(32), dp(28), dp(32))
-            background = rounded(if (darkMode) Color.rgb(24, 23, 39) else Color.rgb(246, 243, 255), 0)
+        val screen = ScrollView(this).apply {
+            isFillViewport = true
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
+                else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255))
+            )
         }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(28), dp(30), dp(28), dp(30))
+        }
+        screen.addView(page, ViewGroup.LayoutParams(-1, -1))
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(24), dp(22), dp(22))
-            background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 22)
+            setPadding(0, 0, 0, 0)
         }
-        screen.addView(card, LinearLayout.LayoutParams(-1, -2))
-        card.addView(label("INŽENÝŘI", 13, purple, true), margin(0, 0, 0, 18))
-        card.addView(label("Odemkni databázi", 27, ink, true), margin(0, 0, 0, 6))
+        page.addView(card, LinearLayout.LayoutParams(-1, -2))
+        card.addView(label("INŽENÝŘI", 14, purple, true), margin(0, 0, 0, 20))
+        card.addView(label("Odemkni databázi", 31, ink, true), margin(0, 0, 0, 8))
         card.addView(label("Zadej heslo, kterým je zašifrovaná databáze.", 15, muted, false), margin(0, 0, 0, 20))
         val field = EditText(this).apply {
             hint = "Heslo k databázi"
@@ -649,6 +790,7 @@ class MainActivity : Activity() {
             savedPassword?.let { setText(String(it)) }
         }
         card.addView(field)
+        loginPasswordInput = field
         val savePassword = CheckBox(this).apply {
             text = "Bezpečně uložit heslo na tomto zařízení"
             setTextColor(ink)
@@ -657,15 +799,28 @@ class MainActivity : Activity() {
         savedPassword?.fill('\u0000')
         card.addView(savePassword, margin(0, 10, 0, 8))
         card.addView(label("Uložené heslo je šifrované klíčem z Android Keystore.", 13, muted, false), margin(0, 0, 0, 16))
-        statusView = label("", 14, muted, false)
+        statusView = label(initialMessage, 14, muted, false)
         card.addView(statusView, margin(0, 0, 0, 12))
         val unlockButton = button("Odemknout") { }
+        loginUnlockButton = unlockButton
         card.addView(unlockButton)
+        val qrLoginButton = button("Přihlásit se QR kódem") {
+            IntentIntegrator(this)
+                .setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
+                .setPrompt("Naskenuj přihlašovací QR kód Inženýrů")
+                .setBeepEnabled(false)
+                .setOrientationLocked(false)
+                .initiateScan()
+        }.apply {
+            setTextColor(ink)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.rgb(243, 241, 250), 14)
+        }
+        card.addView(qrLoginButton, margin(0, 10, 0, 0))
         updateButton = button(if (updateAsset == null) "Zkontrolovat aktualizace aplikace" else "Stáhnout dostupnou aktualizaci") {
             if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
         }
         card.addView(updateButton, margin(0, 10, 0, 0))
-        screen.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
+        page.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
             gravity = Gravity.CENTER
         }, margin(0, 18, 0, 0))
         setContentView(screen)
@@ -715,7 +870,7 @@ class MainActivity : Activity() {
                 } catch (e: Exception) {
                     candidate.fill('\u0000')
                     runOnUiThread {
-                        statusView?.text = if (e is AEADBadTagException) {
+                        statusView?.text = if (e is BadPaddingException) {
                             "Heslo nesouhlasí. Zkontroluj ho a zkus to znovu."
                         } else {
                             "Lokální databáze je poškozená: ${e.message ?: "neplatný obsah"}"
@@ -986,58 +1141,109 @@ class MainActivity : Activity() {
 
     private fun startQuiz(item: JSONObject) {
         val questions = item.optJSONObject("quiz")?.optJSONArray("questions") ?: return
+        if (questions.length() == 0) return
+        val previousScreen = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) ?: return
+        fun returnToItems() {
+            quizExitAction = null
+            setContentView(previousScreen)
+        }
+        quizExitAction = ::returnToItems
         var index = 0
         var score = 0
         fun showQuestion() {
-            if (index >= questions.length()) {
-                val (dialog, content) = customDialog("Výsledek procvičování")
-                content.addView(label("$score / ${questions.length()}", 34, purple, true).apply {
+            val isComplete = index >= questions.length()
+            val page = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(18), dp(20), dp(20))
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
+                    else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255))
+                )
+            }
+            val header = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            header.addView(button("←") { returnToItems() }.apply {
+                contentDescription = "Ukončit procvičování"
+                minWidth = dp(48)
+                setTextColor(ink)
+                background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+            }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(12) })
+            header.addView(label(item.optString("name").ifBlank { "Procvičování" }, 20, ink, true),
+                LinearLayout.LayoutParams(0, -2, 1f))
+            page.addView(header, margin(0, 0, 0, 16))
+
+            if (isComplete) {
+                val result = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                }, margin(0, 18, 0, 6))
-                content.addView(label("Správné odpovědi", 14, muted, false).apply {
+                    setPadding(dp(22), dp(28), dp(22), dp(28))
+                    background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 24)
+                }
+                result.addView(label("Procvičování dokončeno", 25, ink, true).apply {
                     gravity = Gravity.CENTER
                 }, margin(0, 0, 0, 20))
-                val actions = LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                }
-                actions.addView(button("Zkusit znovu") {
-                    dialog.dismiss()
+                result.addView(label("$score / ${questions.length()}", 56, purple, true).apply {
+                    gravity = Gravity.CENTER
+                }, margin(0, 0, 0, 6))
+                val percent = score * 100 / questions.length()
+                result.addView(label("Správně $percent % odpovědí", 15, muted, false).apply {
+                    gravity = Gravity.CENTER
+                }, margin(0, 0, 0, 26))
+                result.addView(button("Zkusit znovu") {
                     index = 0
                     score = 0
                     showQuestion()
-                }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
-                actions.addView(button("Hotovo") { dialog.dismiss() }, LinearLayout.LayoutParams(0, -2, 1f))
-                content.addView(actions)
-                showCustomDialog(dialog)
+                })
+                result.addView(button("Zpět k přehledu") { returnToItems() }, margin(0, 10, 0, 0))
+                page.addView(result, LinearLayout.LayoutParams(-1, 0, 1f))
+                setContentView(page)
                 return
             }
+
+            page.addView(label("Otázka ${index + 1} z ${questions.length()}", 14, muted, true), margin(0, 0, 0, 8))
+            page.addView(ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = questions.length()
+                progress = index
+                progressTintList = android.content.res.ColorStateList.valueOf(purple)
+                progressBackgroundTintList = android.content.res.ColorStateList.valueOf(if (darkMode) Color.rgb(55, 53, 72) else Color.rgb(221, 218, 234))
+            }, LinearLayout.LayoutParams(-1, dp(7)).apply { bottomMargin = dp(16) })
             val question = questions.optJSONObject(index)
             if (question == null) { index++; showQuestion(); return }
             val kind = question.optString("type").let { if (it == "binary") "choice" else it }
             val prompt = if (kind == "punctuation") question.optString("sentence") else question.optString("prompt").ifBlank { "Otázka" }
-            val (dialog, content) = customDialog("${item.optString("name")} · ${index + 1}/${questions.length()}")
-            content.addView(label(prompt, 17, ink, true), margin(0, 14, 0, 16))
-            var focusView: View? = null
+            val body = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(18), dp(20), dp(18), dp(20))
+                background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 22)
+            }
+            body.addView(label(prompt, 21, ink, true), margin(0, 0, 0, 18))
+            val bodyScroll = ScrollView(this).apply {
+                isFillViewport = true
+                addView(body)
+            }
+            page.addView(bodyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            val footer = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
             if (kind == "choice") {
                 val options = question.optJSONArray("options") ?: JSONArray()
-                val choices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
                 for (selected in 0 until options.length()) {
-                    choices.addView(button(options.optString(selected)) {
+                    body.addView(button(options.optString(selected)) {
                         if (selected == question.optInt("answer", -1)) score++
                         index++
-                        dialog.dismiss()
                         showQuestion()
-                    }, margin(0, 0, 0, 8))
+                    }.apply {
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                        setPadding(dp(16), dp(12), dp(16), dp(12))
+                        minHeight = dp(54)
+                        setTextColor(ink)
+                        background = rounded(if (darkMode) Color.rgb(45, 44, 63) else Color.rgb(244, 243, 249), 16)
+                    }, margin(0, 0, 0, 10))
                 }
-                val choiceScroll = ScrollView(this).apply { addView(choices) }
-                content.addView(choiceScroll, LinearLayout.LayoutParams(-1,
-                    dp((options.length() * 56).coerceIn(56, 280))))
-                content.addView(button("Přeskočit") {
-                    index++
-                    dialog.dismiss()
-                    showQuestion()
-                }, margin(0, 8, 0, 0))
             } else {
                 val field = EditText(this).apply {
                     hint = "Napiš odpověď…"
@@ -1049,21 +1255,8 @@ class MainActivity : Activity() {
                     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                     if (kind == "punctuation") setText(question.optString("sentence"))
                 }
-                focusView = field
-                content.addView(field, margin(0, 0, 0, 14))
-                val actions = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                }
-                actions.addView(button("Přeskočit") {
-                    index++
-                    dialog.dismiss()
-                    showQuestion()
-                }.apply {
-                    setTextColor(ink)
-                    background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
-                }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
-                actions.addView(button("Vyhodnotit") {
+                body.addView(field, margin(0, 0, 0, 14))
+                footer.addView(button("Vyhodnotit") {
                     val answers = question.optJSONArray("answers") ?: JSONArray().put(question.optString("answer"))
                     val input = field.text.toString().trim()
                     val accepted = (0 until answers.length()).any { answerIndex ->
@@ -1077,12 +1270,18 @@ class MainActivity : Activity() {
                     }
                     if (accepted) score++
                     index++
-                    dialog.dismiss()
                     showQuestion()
-                }, LinearLayout.LayoutParams(0, -2, 1f))
-                content.addView(actions)
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
             }
-            showCustomDialog(dialog, focusView)
+            footer.addView(button("Přeskočit") {
+                index++
+                showQuestion()
+            }.apply {
+                setTextColor(ink)
+                background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+            }, LinearLayout.LayoutParams(if (kind == "choice") -1 else 0, -2, if (kind == "choice") 0f else 1f))
+            page.addView(footer, margin(0, 14, 0, 0))
+            setContentView(page)
         }
         showQuestion()
     }
