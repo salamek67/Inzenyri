@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = providers.gradleProperty("appVersionCode").orElse("1").get().toInt()
-        versionName = providers.gradleProperty("appVersionName").orElse("0.3.3").get()
+        versionName = providers.gradleProperty("appVersionName").orElse("0.3.4").get()
         buildConfigField("String", "GITHUB_APP_CLIENT_ID", "\"$githubAppClientId\"")
     }
 

@@ -1177,7 +1177,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(label("GitHub · přihlášení", 21, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
-        val closeButton = button("✕") { githubLoginDialog?.dismiss() }.apply {
+        val closeButton = button("✕") { cancelled.set(true); githubLoginDialog?.dismiss() }.apply {
             textSize = 17f
             minWidth = dp(42)
             minHeight = dp(42)
