@@ -50,7 +50,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: inzenyri-android-debug
-          path: app/app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
   release-build:
@@ -99,7 +99,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           gradle assembleRelease -PappVersionName="$version" -PappVersionCode="$GITHUB_RUN_NUMBER" -PgithubAppClientId="$GH_APP_CLIENT_ID"
-          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/inzenyri-android.apk"
+          cp build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/inzenyri-android.apk"
       - name: Upload signed APK artifact
         uses: actions/upload-artifact@v4
         with:
