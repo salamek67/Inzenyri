@@ -12,8 +12,10 @@ import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.text.InputType
+import android.text.Editable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.TextWatcher
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
@@ -26,11 +28,13 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.HorizontalScrollView
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
@@ -61,9 +65,10 @@ import javax.crypto.spec.SecretKeySpec
 class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val networkWorker = Executors.newSingleThreadExecutor()
-    private val purple = Color.rgb(107, 76, 210)
-    private val ink = Color.rgb(31, 38, 56)
-    private val muted = Color.rgb(103, 113, 132)
+    private var darkMode = false
+    private val purple get() = if (darkMode) Color.rgb(177, 153, 255) else Color.rgb(107, 76, 210)
+    private val ink get() = if (darkMode) Color.rgb(244, 242, 252) else Color.rgb(31, 38, 56)
+    private val muted get() = if (darkMode) Color.rgb(174, 174, 192) else Color.rgb(103, 113, 132)
     private var database: JSONObject? = null
     private var originalDatabaseHash: String? = null
     private var password: CharArray? = null
@@ -85,12 +90,20 @@ class MainActivity : Activity() {
     private var updateButton: Button? = null
     private var pendingApk: File? = null
     private var updateAsset: JSONObject? = null
-    private var originButton: Button? = null
     private var maintainerButton: Button? = null
+    private var swipeRefreshLayout: SwipeRefreshLayout? = null
+    private var dashboardView: View? = null
+    private var dashboardStatusView: TextView? = null
+    private var inMaintainerWorkspace = false
     private var itemsContainer: LinearLayout? = null
     private var workspaceDir: File? = null
     private var databaseFile: File? = null
     private var maintainerMode = false
+    private var searchInput: EditText? = null
+    private var selectedFilter = "all"
+    private var filterButtons = mutableMapOf<String, Button>()
+    private var themeButton: Button? = null
+    private var lockButton: Button? = null
     private var githubLoginDialog: android.app.AlertDialog? = null
     private var githubLoginStatusView: TextView? = null
     private var githubLoginCodeView: TextView? = null
@@ -106,6 +119,7 @@ class MainActivity : Activity() {
         }
         databaseFile = File(workspaceDir, "data.enc.json")
         maintainerMode = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).getBoolean("maintainer_mode", false)
+        darkMode = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).getBoolean("dark_mode", false)
         render()
         openStoredDatabaseOrClone()
         checkForUpdate(silent = true)
@@ -113,6 +127,79 @@ class MainActivity : Activity() {
 
     private fun registerForActivityResultCompat(requestCode: Int): (Intent) -> Unit = { intent ->
         startActivityForResult(intent, requestCode)
+    }
+
+    private fun toggleDarkMode() {
+        val oldQuery = searchInput?.text?.toString().orEmpty()
+        val draft = listOf(
+            titleInput?.text?.toString().orEmpty(),
+            descriptionInput?.text?.toString().orEmpty(),
+            solutionInput?.text?.toString().orEmpty(),
+            quizPromptInput?.text?.toString().orEmpty(),
+            quizAnswersInput?.text?.toString().orEmpty()
+        )
+        val oldStatus = statusView?.text?.toString().orEmpty()
+        darkMode = !darkMode
+        getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putBoolean("dark_mode", darkMode).apply()
+        render()
+        searchInput?.setText(oldQuery)
+        listOf(titleInput, descriptionInput, solutionInput, quizPromptInput, quizAnswersInput)
+            .zip(draft).forEach { (view, text) -> view?.setText(text) }
+        selectType(selectedType)
+        statusView?.text = oldStatus
+        if (database != null) {
+            itemsContainer?.visibility = View.VISIBLE
+            lockButton?.visibility = View.VISIBLE
+            form?.visibility = if (inMaintainerWorkspace && maintainerMode) View.VISIBLE else View.GONE
+            exportButton?.visibility = if (inMaintainerWorkspace && maintainerMode) View.VISIBLE else View.GONE
+            pushButton?.visibility = if (inMaintainerWorkspace && maintainerMode) View.VISIBLE else View.GONE
+            renderDatabase()
+        }
+    }
+
+    private fun lockDatabase() {
+        val current = database?.let { JSONObject(it.toString()) } ?: return
+        val pass = password?.clone() ?: return
+        val envelope = sourceEnvelope?.let { JSONObject(it.toString()) } ?: run {
+            pass.fill('\u0000')
+            return
+        }
+        statusView?.text = "Ukládám a zamykám databázi…"
+        lockButton?.isEnabled = false
+        worker.execute {
+            try {
+                val raw = encryptedOutput(current, pass, envelope)
+                saveLocalDatabase(raw)
+                runOnUiThread {
+                    password?.fill('\u0000')
+                    password = null
+                    database = null
+                    sourceEnvelope = null
+                    originalDatabaseHash = null
+                    render()
+                    askPassword(raw, preserveBaseline = true)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusView?.text = e.message ?: "Databázi se nepodařilo bezpečně zamknout."
+                    lockButton?.isEnabled = true
+                    toast(statusView?.text.toString())
+                }
+            } finally {
+                pass.fill('\u0000')
+            }
+        }
+    }
+
+    private fun updateFilterButtons() {
+        filterButtons.forEach { (key, chip) ->
+            val selected = key == selectedFilter
+            chip.background = rounded(
+                if (selected) purple else if (darkMode) Color.rgb(39, 39, 57) else Color.WHITE,
+                22
+            )
+            chip.setTextColor(if (selected) Color.WHITE else ink)
+        }
     }
 
     @Deprecated("Uses document picker callbacks for compatibility with the platform Activity")
@@ -146,17 +233,65 @@ class MainActivity : Activity() {
     private fun render() {
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(28), dp(22), dp(20))
-            background = rounded(Color.rgb(247, 245, 255), 0)
+            setPadding(dp(20), dp(24), dp(20), dp(22))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
+                else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255))
+            )
         }
         val scroller = ScrollView(this).apply { addView(page) }
-        setContentView(scroller)
+        swipeRefreshLayout = SwipeRefreshLayout(this).apply {
+            setColorSchemeColors(purple)
+            setOnRefreshListener { refreshFromOrigin() }
+            addView(scroller)
+        }
+        dashboardView = swipeRefreshLayout
+        inMaintainerWorkspace = false
+        setContentView(swipeRefreshLayout)
 
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         topBar.addView(label("INŽENÝŘI", 13, purple, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val settingsButton = Button(this).apply {
+            text = "⚙"
+            contentDescription = "Nastavení"
+            textSize = 20f
+            minWidth = dp(48)
+            minHeight = dp(48)
+            isAllCaps = false
+            setTextColor(ink)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+            setOnClickListener { openSettings() }
+        }
+        topBar.addView(settingsButton, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
+        lockButton = Button(this).apply {
+            text = "🔒"
+            contentDescription = "Zamknout databázi"
+            textSize = 19f
+            minWidth = dp(48)
+            minHeight = dp(48)
+            isAllCaps = false
+            setTextColor(ink)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+            visibility = if (database != null) View.VISIBLE else View.GONE
+            setOnClickListener { lockDatabase() }
+        }
+        topBar.addView(lockButton, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
+        themeButton = Button(this).apply {
+            text = if (darkMode) "☀" else "☾"
+            contentDescription = if (darkMode) "Zapnout světlý režim" else "Zapnout tmavý režim"
+            textSize = 20f
+            minWidth = dp(48)
+            minHeight = dp(48)
+            isAllCaps = false
+            setTextColor(ink)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+            setOnClickListener { toggleDarkMode() }
+        }
+        topBar.addView(themeButton, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
         maintainerButton = Button(this).apply {
             text = if (maintainerMode) "🔑" else "🔧"
             contentDescription = if (maintainerMode) "GitHub maintainer účet je propojen" else "Propojit maintainer účet s GitHubem"
@@ -164,30 +299,57 @@ class MainActivity : Activity() {
             minWidth = dp(48)
             minHeight = dp(48)
             isAllCaps = false
-            background = rounded(Color.WHITE, 14)
-            setOnClickListener { connectMaintainer() }
+            setTextColor(ink)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+            setOnClickListener {
+                if (maintainerMode && database != null && readGithubCredentials() != null) showMaintainerWorkspace()
+                else connectMaintainer()
+            }
         }
         topBar.addView(maintainerButton)
         page.addView(topBar)
         page.addView(label("Přehled", 30, ink, true), margin(0, 4, 0, 4))
         page.addView(label("Testy, úkoly a akce na jednom místě.", 15, muted, false), margin(0, 0, 0, 16))
-        originButton = button("Pull databázi z origin") { loadFromOrigin() }
-        page.addView(originButton, margin(0, 4, 0, 8))
+        searchInput = EditText(this).apply {
+            hint = "Hledat testy, úkoly a akce"
+            textSize = 15f
+            setTextColor(ink)
+            setHintTextColor(muted)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            minHeight = dp(52)
+            background = rounded(if (darkMode) Color.rgb(37, 37, 55) else Color.WHITE, 16)
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderDatabase()
+                override fun afterTextChanged(s: Editable?) = Unit
+            })
+        }
+        page.addView(searchInput, margin(0, 0, 0, 10))
+        val filters = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
+        val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        filterButtons.clear()
+        listOf("all" to "Vše", "test" to "Testy", "task" to "Úkoly", "event" to "Akce", "done" to "Hotové")
+            .forEach { (key, title) ->
+                val chip = button(title) {
+                    selectedFilter = key
+                    updateFilterButtons()
+                    renderDatabase()
+                }.apply { minHeight = dp(40); minWidth = 0; setPadding(dp(15), 0, dp(15), 0) }
+                filterButtons[key] = chip
+                filterRow.addView(chip, LinearLayout.LayoutParams(-2, dp(40)).apply { marginEnd = dp(8) })
+            }
+        filters.addView(filterRow)
+        page.addView(filters, margin(0, 0, 0, 10))
+        updateFilterButtons()
         statusView = label("Připravuji lokální data…", 13, muted, false)
+        dashboardStatusView = statusView
         page.addView(statusView, margin(0, 0, 0, 12))
         itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         page.addView(itemsContainer)
         exportButton = button("Uložit šifrovanou databázi") { chooseDestination() }.also { it.visibility = View.GONE }
-        page.addView(exportButton, margin(0, 0, 0, 8))
         pushButton = button("Pushnout DB na origin") { pushToOrigin() }.also { it.visibility = View.GONE }
-        page.addView(pushButton, margin(0, 0, 0, 12))
-        updateButton = button("Zkontrolovat aktualizace aplikace") {
-            if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
-        }
-        page.addView(updateButton, margin(0, 0, 0, 12))
 
         form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
-        page.addView(form)
         form?.apply {
             addView(label("Typ položky", 14, ink, true), margin(0, 8, 0, 7))
             val types = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
@@ -223,7 +385,6 @@ class MainActivity : Activity() {
                 statusView?.text = "Lokální databázi se nepodařilo načíst: ${e.message}"
             }
         }
-        originButton?.isEnabled = false
         statusView?.text = "Stahuji šifrovanou databázi do složky aplikace…"
         networkWorker.execute {
             try {
@@ -234,14 +395,12 @@ class MainActivity : Activity() {
                 }
                 saveLocalDatabase(raw)
                 runOnUiThread {
-                    originButton?.isEnabled = true
                     statusView?.text = "Databáze stažena. Zadej heslo."
                     askPassword(raw)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    originButton?.isEnabled = true
-                    statusView?.text = "Databázi se nepodařilo stáhnout. Zkontroluj připojení a zkus Pull."
+                    statusView?.text = "Databázi se nepodařilo stáhnout. Zkontroluj připojení a obnov tažením dolů."
                     toast(e.message ?: "Stažení databáze se nezdařilo.")
                 }
             }
@@ -273,10 +432,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun loadFromOrigin() {
+    private fun refreshFromOrigin() {
         confirmReplacingDatabase {
-            originButton?.isEnabled = false
-            statusView?.text = "Stahuji databázi z origin…"
+            statusView?.text = "Stahuji databázi…"
             networkWorker.execute {
                 try {
                     val token = readGithubCredentials()?.let { saved -> try { validCredentials(saved).accessToken } catch (_: Exception) { null } }
@@ -284,20 +442,96 @@ class MainActivity : Activity() {
                         if (token == null) throw e
                         fetchRemoteDatabase()
                     }
-                    runOnUiThread {
-                        originButton?.isEnabled = true
-                        statusView?.text = "Databáze stažena z origin. Zadej heslo."
-                        askPassword(raw)
+                    val activePassword = password?.clone()
+                    val parsed = activePassword?.let {
+                        JSONObject(String(decrypt(JSONObject(raw), it), StandardCharsets.UTF_8))
                     }
+                    runOnUiThread {
+                        swipeRefreshLayout?.isRefreshing = false
+                        if (parsed != null) {
+                            password?.fill('\u0000')
+                            password = activePassword.clone()
+                            database = parsed
+                            sourceEnvelope = JSONObject(raw)
+                            originalDatabaseHash = databaseHash(parsed)
+                            getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, originalDatabaseHash).apply()
+                            try { saveLocalDatabase(raw) } catch (e: Exception) { toast(e.message ?: "Lokální kopii se nepodařilo uložit.") }
+                            statusView?.text = "Databáze obnovena · ${parsed.getJSONArray("tasks").length()} položek."
+                            renderDatabase()
+                        } else {
+                            statusView?.text = "Databáze stažena. Zadej heslo."
+                            askPassword(raw)
+                        }
+                    }
+        activePassword?.fill('\u0000')
                 } catch (e: Exception) {
                     runOnUiThread {
-                        originButton?.isEnabled = true
+                        swipeRefreshLayout?.isRefreshing = false
                         statusView?.text = e.message ?: "Stažení databáze se nezdařilo."
                         toast(statusView?.text.toString())
                     }
                 }
             }
         }
+    }
+
+    private fun openSettings() {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(12), dp(22), dp(8))
+        }
+        content.addView(label("Verze ${BuildConfig.VERSION_NAME}", 14, muted, false), margin(0, 0, 0, 12))
+        updateButton = button(if (updateAsset == null) "Zkontrolovat aktualizace aplikace" else "Stáhnout dostupnou aktualizaci") {
+            if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
+        }
+        content.addView(updateButton)
+        android.app.AlertDialog.Builder(this).setTitle("Nastavení").setView(content)
+            .setNegativeButton("Zavřít", null).show()
+    }
+
+    private fun showMaintainerWorkspace() {
+        if (!maintainerMode || database == null) {
+            connectMaintainer()
+            return
+        }
+        inMaintainerWorkspace = true
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(24))
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
+                else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255)))
+        }
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        header.addView(button("← Zpět") { showDashboard() }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(12) })
+        header.addView(label("Údržba databáze", 22, ink, true))
+        page.addView(header, margin(0, 0, 0, 16))
+        statusView = label("Přidávej položky nebo pushni změny na origin.", 13, muted, false)
+        page.addView(statusView, margin(0, 0, 0, 12))
+        form?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+            page.addView(view)
+        }
+        exportButton?.visibility = View.VISIBLE
+        pushButton?.visibility = View.VISIBLE
+        exportButton?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+            page.addView(view, margin(0, 14, 0, 8))
+        }
+        pushButton?.let { view ->
+            (view.parent as? ViewGroup)?.removeView(view)
+            page.addView(view, margin(0, 0, 0, 12))
+        }
+        setContentView(ScrollView(this).apply { addView(page) })
+    }
+
+    private fun showDashboard() {
+        inMaintainerWorkspace = false
+        statusView = dashboardStatusView
+        form?.visibility = View.GONE
+        exportButton?.visibility = View.GONE
+        pushButton?.visibility = View.GONE
+        dashboardView?.let(::setContentView)
     }
 
     private fun confirmReplacingDatabase(action: () -> Unit) {
@@ -308,7 +542,7 @@ class MainActivity : Activity() {
         android.app.AlertDialog.Builder(this)
             .setTitle("Nahradit rozpracovanou databázi?")
             .setMessage("Máš položky, které ještě nejsou pushnuté na origin. Při načtení jiné databáze budou ztraceny.")
-            .setNegativeButton("Zpět", null)
+            .setNegativeButton("Zpět") { _, _ -> swipeRefreshLayout?.isRefreshing = false }
             .setPositiveButton("Pokračovat") { _, _ -> action() }
             .show()
     }
@@ -319,12 +553,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(28), dp(32), dp(28), dp(32))
-            background = rounded(Color.rgb(247, 245, 255), 0)
+            background = rounded(if (darkMode) Color.rgb(24, 23, 39) else Color.rgb(246, 243, 255), 0)
         }
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(22), dp(24), dp(22), dp(22))
-            background = rounded(Color.WHITE, 22)
+            background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 22)
         }
         screen.addView(card, LinearLayout.LayoutParams(-1, -2))
         card.addView(label("INŽENÝŘI", 13, purple, true), margin(0, 0, 0, 18))
@@ -336,7 +570,7 @@ class MainActivity : Activity() {
             setTextColor(ink)
             setHintTextColor(muted)
             setPadding(dp(15), dp(12), dp(15), dp(12))
-            background = rounded(Color.rgb(250, 250, 253), 14)
+            background = rounded(if (darkMode) Color.rgb(27, 28, 43) else Color.rgb(250, 250, 253), 14)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             imeOptions = EditorInfo.IME_ACTION_DONE
             minHeight = dp(52)
@@ -393,11 +627,13 @@ class MainActivity : Activity() {
                             }
                         }
                         render()
+                        lockButton?.visibility = View.VISIBLE
                         itemsContainer?.visibility = View.VISIBLE
-                        form?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
-                        exportButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
-                        pushButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
-                        statusView?.text = "Odemčeno · ${parsed.getJSONArray("tasks").length()} položek"
+                        form?.visibility = View.GONE
+                        exportButton?.visibility = View.GONE
+                        pushButton?.visibility = View.GONE
+                        val dbVersion = sourceEnvelope?.optString("dbVersion")?.takeIf { it.isNotBlank() } ?: "neuvedena"
+                        statusView?.text = "Odemčeno · ${parsed.getJSONArray("tasks").length()} položek · DB $dbVersion"
                         renderDatabase()
                     }
                 } catch (_: Exception) {
@@ -419,37 +655,50 @@ class MainActivity : Activity() {
 
     private fun connectMaintainer() {
         runGithubTask { token ->
-            val user = JSONObject(githubRequest("user", token = token)).optString("login")
-            require(user.isNotBlank()) { "GitHub nevrátil přihlášený účet." }
-            setGithubLoginStep(2, "SUCCESS")
-            setGithubLoginStep(3, "RUNNING")
-            val repo = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO", token = token))
-            require(repo.optJSONObject("permissions")?.optBoolean("push") == true) {
-                "Přihlášený GitHub účet nemá právo zápisu do repozitáře."
-            }
-            if (database == null) {
-                val raw = fetchRemoteDatabase(token)
-                saveLocalDatabase(raw)
-                runOnUiThread {
-                    statusView?.text = "Databáze stažena. Zadej heslo."
-                    askPassword(raw)
+            try {
+                val user = JSONObject(githubRequest("user", token = token)).optString("login")
+                require(user.isNotBlank()) { "GitHub nevrátil přihlášený účet." }
+                setGithubLoginStep(2, "SUCCESS")
+                setGithubLoginStep(3, "RUNNING")
+                val repo = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO", token = token))
+                require(repo.optJSONObject("permissions")?.optBoolean("push") == true) {
+                    "Přihlášený GitHub účet nemá právo zápisu do repozitáře."
                 }
-            } else {
-                githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH", token = token)
-            }
-            setGithubLoginStep(3, "SUCCESS")
-            runOnUiThread {
-                maintainerMode = true
-                getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit().putBoolean("maintainer_mode", true).apply()
-                maintainerButton?.text = "🔑"
-                maintainerButton?.contentDescription = "GitHub propojen jako $user"
-                form?.visibility = if (database != null) View.VISIBLE else View.GONE
-                exportButton?.visibility = if (database != null) View.VISIBLE else View.GONE
-                pushButton?.visibility = if (database != null) View.VISIBLE else View.GONE
-                statusView?.text = "GitHub propojen · $user. Přidávání je povolené."
-                toast("GitHub propojen")
+                if (database == null) {
+                    val raw = fetchRemoteDatabase(token)
+                    saveLocalDatabase(raw)
+                    runOnUiThread {
+                        statusView?.text = "Databáze stažena. Zadej heslo."
+                        askPassword(raw)
+                    }
+                } else {
+                    githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH", token = token)
+                }
+                setGithubLoginStep(3, "SUCCESS")
+                runOnUiThread {
+                    setMaintainerConnection(true, user)
+                    statusView?.text = "GitHub propojen · $user. Přidávání je povolené."
+                    toast("GitHub propojen")
+                }
+            } catch (e: Exception) {
+                runOnUiThread { setMaintainerConnection(false) }
+                throw e
             }
         }
+    }
+
+    private fun setMaintainerConnection(connected: Boolean, user: String? = null) {
+        maintainerMode = connected
+        getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit()
+            .putBoolean("maintainer_mode", connected).apply()
+        maintainerButton?.text = if (connected) "🔑" else "🔧"
+        maintainerButton?.contentDescription = if (connected) {
+            "GitHub propojen${user?.let { " jako $it" }.orEmpty()}"
+        } else "Propojit maintainer účet s GitHubem"
+        form?.visibility = View.GONE
+        exportButton?.visibility = View.GONE
+        pushButton?.visibility = View.GONE
+        if (connected && database != null) showMaintainerWorkspace()
     }
 
     private fun isDatabaseDirty(): Boolean {
@@ -480,27 +729,74 @@ class MainActivity : Activity() {
         }
         val doneKeys = doneItems().apply { retainAll(allEntries.map { itemKey(it.first) }.toSet()) }
         getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, doneKeys).apply()
+        val query = searchInput?.text?.toString()?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        val visibleEntries = activeEntries.filter { (item, _, _) ->
+            val done = itemKey(item) in doneKeys
+            val matchesFilter = when (selectedFilter) {
+                "test", "task", "event" -> itemType(item) == selectedFilter && !done
+                "done" -> done
+                else -> true
+            }
+            val searchable = listOf("name", "date", "task", "solution")
+                .joinToString(" ") { item.optString(it) }
+                .plus(" ")
+                .plus(item.optJSONObject("quiz")?.toString().orEmpty())
+                .lowercase(Locale.ROOT)
+            matchesFilter && (query.isBlank() || searchable.contains(query))
+        }
         val categories = listOf("test" to "Testy", "task" to "Úkoly", "event" to "Akce")
         for ((type, title) in categories) {
-            val categoryItems = activeEntries.filter { itemType(it.first) == type && itemKey(it.first) !in doneKeys }
+            val categoryItems = visibleEntries.filter {
+                itemType(it.first) == type && itemKey(it.first) !in doneKeys
+            }
             addSection(container, title, categoryItems)
         }
-        val completed = activeEntries.filter { itemKey(it.first) in doneKeys }
+        val completed = visibleEntries.filter { itemKey(it.first) in doneKeys }
         if (completed.isNotEmpty()) addSection(container, "Dokončené", completed)
-        if (activeEntries.isEmpty()) container.addView(label("Žádné nadcházející položky.", 15, muted, false), margin(0, 8, 0, 16))
+        if (visibleEntries.isEmpty()) {
+            val emptyMessage = if (query.isNotBlank()) "Nic jsme nenašli. Zkus upravit hledání."
+            else if (selectedFilter == "done") "Zatím tu nejsou žádné dokončené položky."
+            else "Žádné nadcházející položky."
+            container.addView(label(emptyMessage, 15, muted, false), margin(0, 8, 0, 16))
+        }
     }
 
     private fun addSection(container: LinearLayout, title: String, entries: List<Triple<JSONObject, Int, Date?>>) {
         if (entries.isEmpty()) return
-        container.addView(label("$title · ${entries.size}", 20, ink, true), margin(0, 12, 0, 8))
+        val (symbol, accent) = when (title) {
+            "Testy" -> "✎" to Color.rgb(236, 108, 104)
+            "Úkoly" -> "✓" to purple
+            "Akce" -> "◷" to Color.rgb(60, 130, 246)
+            else -> "✓" to Color.rgb(36, 133, 91)
+        }
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.rgb(255, 255, 255), 15)
+        }
+        heading.addView(TextView(this).apply {
+            text = symbol
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setTextColor(accent)
+            background = rounded(if (darkMode) Color.rgb(48, 43, 69) else Color.rgb(241, 237, 255), 11)
+        }, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginEnd = dp(10) })
+        heading.addView(label(title, 17, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        heading.addView(label(entries.size.toString(), 13, accent, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(9), dp(5), dp(9), dp(5))
+            background = rounded(if (darkMode) Color.rgb(48, 43, 69) else Color.rgb(241, 237, 255), 99)
+        })
+        container.addView(heading, margin(0, 14, 0, 10))
         entries.forEach { (item, _, _) -> container.addView(itemCard(item), margin(0, 0, 0, 10)) }
     }
 
     private fun itemCard(item: JSONObject): View {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-            background = rounded(Color.WHITE, 18)
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 20)
         }
         val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val checkbox = CheckBox(this).apply {
@@ -514,8 +810,13 @@ class MainActivity : Activity() {
             }
         }
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val accent = when (itemType(item)) {
+            "test" -> Color.rgb(236, 108, 104)
+            "event" -> Color.rgb(60, 130, 246)
+            else -> purple
+        }
         titleBlock.addView(label(item.optString("name").ifBlank { "Bez názvu" }, 17, ink, true))
-        titleBlock.addView(label(item.optString("date").ifBlank { "Bez data" }, 13, muted, false), margin(0, 2, 0, 0))
+        titleBlock.addView(label(item.optString("date").ifBlank { "Bez data" }, 13, accent, true), margin(0, 3, 0, 0))
         heading.addView(checkbox)
         heading.addView(titleBlock, LinearLayout.LayoutParams(0, -2, 1f))
         card.addView(heading)
@@ -789,6 +1090,7 @@ class MainActivity : Activity() {
             statusView?.text = "Používám uložené přihlášení ke GitHubu…"
             executeGithubTask(saved, freezeForm, task)
         } else {
+            if (maintainerMode) setMaintainerConnection(false)
             if (hasStoredGithubCredentials()) {
                 statusView?.text = "Uložené přihlášení nejde na tomto zařízení přečíst. Přihlas se znovu."
             }
@@ -1094,7 +1396,6 @@ class MainActivity : Activity() {
             if (view is ViewGroup) for (index in 0 until view.childCount) visit(view.getChildAt(index))
         }
         form?.let { visit(it) }
-        originButton?.isEnabled = enabled
         exportButton?.isEnabled = enabled
         addButton?.isEnabled = enabled
         maintainerButton?.isEnabled = enabled
@@ -1459,7 +1760,7 @@ class MainActivity : Activity() {
     private fun selectType(type: String) {
         selectedType = type
         typeButtons.forEach { (key, button) ->
-            button.background = rounded(if (key == type) purple else Color.WHITE, 16)
+            button.background = rounded(if (key == type) purple else if (darkMode) Color.rgb(39, 39, 57) else Color.WHITE, 16)
             button.setTextColor(if (key == type) Color.WHITE else ink)
         }
         solutionInput?.visibility = if (type == "task") View.VISIBLE else View.GONE
@@ -1482,7 +1783,7 @@ class MainActivity : Activity() {
         setTextColor(ink)
         setHintTextColor(muted)
         setPadding(dp(15), dp(12), dp(15), dp(12))
-        background = rounded(Color.WHITE, 14)
+        background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 14)
         inputType = if (multiline) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or InputType.TYPE_TEXT_FLAG_MULTI_LINE else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         minLines = if (multiline) 3 else 1
         gravity = if (multiline) Gravity.TOP else Gravity.CENTER_VERTICAL
@@ -1510,7 +1811,7 @@ class MainActivity : Activity() {
     private fun rounded(color: Int, radius: Int): GradientDrawable = GradientDrawable().apply {
         setColor(color)
         cornerRadius = dp(radius).toFloat()
-        if (color == Color.WHITE) setStroke(dp(1), Color.rgb(230, 228, 239))
+        setStroke(dp(1), if (darkMode) Color.rgb(67, 66, 87) else Color.rgb(230, 228, 239))
     }
 
     private fun margin(left: Int, top: Int, right: Int, bottom: Int) = LinearLayout.LayoutParams(-1, -2).apply {
