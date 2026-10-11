@@ -419,7 +419,10 @@ class MainActivity : Activity() {
             val date = parseDatabaseDate(item.optString("date"))
             Triple(item, index, date)
         }.sortedWith(compareBy<Triple<JSONObject, Int, Date?>>({ it.third ?: Date(Long.MAX_VALUE) }, { it.second }))
-        val activeEntries = allEntries.filter { it.third == null || !it.third.before(today) }
+        val activeEntries = allEntries.filter { entry ->
+            val date = entry.third
+            date == null || !date.before(today)
+        }
         val doneKeys = doneItems().apply { retainAll(allEntries.map { itemKey(it.first) }.toSet()) }
         getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, doneKeys).apply()
         val categories = listOf("test" to "Testy", "task" to "Úkoly", "event" to "Akce")
