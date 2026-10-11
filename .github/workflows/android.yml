@@ -138,4 +138,4 @@ jobs:
       - name: Attach APK to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/release/inzenyri-android.apk" --clobber
+        run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/release/inzenyri-android.apk" --clobber --repo "$GITHUB_REPOSITORY"
