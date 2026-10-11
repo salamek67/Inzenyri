@@ -26,6 +26,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -90,6 +91,11 @@ class MainActivity : Activity() {
     private var workspaceDir: File? = null
     private var databaseFile: File? = null
     private var maintainerMode = false
+    private var githubLoginDialog: android.app.AlertDialog? = null
+    private var githubLoginStatusView: TextView? = null
+    private var githubLoginCodeView: TextView? = null
+    private var githubLoginOpenButton: Button? = null
+    private var githubLoginStepViews = mutableListOf<TextView>()
 
     private val createDocument = registerForActivityResultCompat(102)
 
@@ -415,6 +421,8 @@ class MainActivity : Activity() {
         runGithubTask { token ->
             val user = JSONObject(githubRequest("user", token = token)).optString("login")
             require(user.isNotBlank()) { "GitHub nevrátil přihlášený účet." }
+            setGithubLoginStep(2, "SUCCESS")
+            setGithubLoginStep(3, "RUNNING")
             val repo = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO", token = token))
             require(repo.optJSONObject("permissions")?.optBoolean("push") == true) {
                 "Přihlášený GitHub účet nemá právo zápisu do repozitáře."
@@ -429,6 +437,7 @@ class MainActivity : Activity() {
             } else {
                 githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH", token = token)
             }
+            setGithubLoginStep(3, "SUCCESS")
             runOnUiThread {
                 maintainerMode = true
                 getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit().putBoolean("maintainer_mode", true).apply()
@@ -797,9 +806,11 @@ class MainActivity : Activity() {
             try {
                 val active = validCredentials(credentials)
                 task(active.accessToken)
+                finishGithubLoginDialog()
             } catch (e: Exception) {
                 if (e.message?.contains("HTTP 401") == true) clearGithubToken()
                 runOnUiThread {
+                    failGithubLoginDialog(e.message ?: "Požadavek na GitHub se nezdařil.")
                     statusView?.text = e.message ?: "Požadavek na GitHub se nezdařil."
                     toast(e.message ?: "Požadavek na GitHub se nezdařil.")
                 }
@@ -814,12 +825,136 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showGithubLoginProgress(cancelled: AtomicBoolean): android.app.AlertDialog {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(8), dp(22), dp(8))
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(ProgressBar(this).apply { isIndeterminate = true },
+            LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(12) })
+        githubLoginStatusView = label("Připravuji přihlášení…", 14, muted, false)
+        header.addView(githubLoginStatusView, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(header, margin(0, 0, 0, 14))
+
+        githubLoginStepViews = mutableListOf()
+        listOf(
+            "Získání přihlašovacího kódu",
+            "Potvrzení v GitHubu",
+            "Ověření účtu",
+            "Kontrola oprávnění repozitáře",
+            "Dokončení propojení"
+        ).forEach { title ->
+            val row = label("○  $title", 14, muted, false)
+            githubLoginStepViews += row
+            content.addView(row, margin(0, 5, 0, 5))
+        }
+        githubLoginCodeView = label("Kód se načte za chvíli…", 20, ink, true).apply {
+            gravity = Gravity.CENTER
+            typeface = Typeface.MONOSPACE
+        }
+        content.addView(githubLoginCodeView, margin(0, 14, 0, 4))
+        content.addView(label("Zadej ho pouze na github.com.", 12, muted, false).apply {
+            gravity = Gravity.CENTER
+        })
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("GitHub · přihlášení")
+            .setView(content)
+            .setNegativeButton("Zrušit", null)
+            .setPositiveButton("Otevřít GitHub", null)
+            .create()
+        githubLoginDialog = dialog
+        dialog.setOnShowListener {
+            githubLoginOpenButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).apply {
+                isEnabled = false
+                setOnClickListener {
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))
+                    } catch (e: Exception) {
+                        failGithubLoginDialog(e.message ?: "GitHub se nepodařilo otevřít.")
+                    }
+                }
+            }
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                cancelled.set(true)
+                dialog.dismiss()
+                clearGithubLoginDialog()
+            }
+        }
+        dialog.setOnCancelListener {
+            cancelled.set(true)
+            clearGithubLoginDialog()
+        }
+        dialog.setOnDismissListener { if (githubLoginDialog === dialog) clearGithubLoginDialog() }
+        dialog.show()
+        setGithubLoginStep(0, "RUNNING")
+        return dialog
+    }
+
+    private fun setGithubLoginStep(index: Int, state: String) {
+        runOnUiThread {
+            val row = githubLoginStepViews.getOrNull(index) ?: return@runOnUiThread
+            val title = row.text.toString().substringAfter("  ")
+            val (icon, color) = when (state) {
+                "RUNNING" -> "●" to purple
+                "SUCCESS" -> "✓" to Color.rgb(35, 135, 75)
+                "FAILED" -> "✕" to Color.rgb(190, 45, 55)
+                else -> "○" to muted
+            }
+            row.text = "$icon  $title"
+            row.setTextColor(color)
+            if (state == "RUNNING") {
+                githubLoginStatusView?.text = title
+            }
+        }
+    }
+
+    private fun finishGithubLoginDialog() {
+        runOnUiThread {
+            if (githubLoginDialog == null) return@runOnUiThread
+            setGithubLoginStep(4, "SUCCESS")
+            githubLoginStatusView?.text = "Propojení účtu dokončeno."
+            val dialog = githubLoginDialog
+            dialog?.window?.decorView?.postDelayed({
+                if (githubLoginDialog === dialog) {
+                    dialog.dismiss()
+                    clearGithubLoginDialog()
+                }
+            }, 900)
+        }
+    }
+
+    private fun failGithubLoginDialog(message: String) {
+        if (githubLoginDialog == null) return
+        val current = githubLoginStepViews.indexOfFirst { it.currentTextColor == purple }
+        if (current >= 0) setGithubLoginStep(current, "FAILED")
+        githubLoginStatusView?.text = message
+        githubLoginOpenButton?.text = "Zavřít"
+        githubLoginOpenButton?.isEnabled = true
+        githubLoginOpenButton?.setOnClickListener { githubLoginDialog?.dismiss() }
+        githubLoginDialog?.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.visibility = View.GONE
+    }
+
+    private fun clearGithubLoginDialog() {
+        githubLoginDialog = null
+        githubLoginStatusView = null
+        githubLoginCodeView = null
+        githubLoginOpenButton = null
+        githubLoginStepViews.clear()
+    }
+
     private fun startDeviceLogin(clientId: String, freezeForm: Boolean, task: (String) -> Unit) {
         updateButton?.isEnabled = false
         pushButton?.isEnabled = false
         maintainerButton?.isEnabled = false
         if (freezeForm) setFormEnabled(false)
         statusView?.text = "Připravuji přihlášení přes GitHub…"
+        val cancelled = AtomicBoolean(false)
+        showGithubLoginProgress(cancelled)
         networkWorker.execute {
             try {
                 val response = oauthRequest("https://github.com/login/device/code", mapOf("client_id" to clientId, "scope" to "offline_access"))
@@ -828,21 +963,15 @@ class MainActivity : Activity() {
                 val verificationUri = response.optString("verification_uri", "https://github.com/login/device")
                 require(verificationUri == "https://github.com/login/device") { "GitHub vrátil neplatnou adresu přihlášení." }
                 val expiresAt = System.currentTimeMillis() + response.optLong("expires_in", 900) * 1000
-                val cancelled = AtomicBoolean(false)
                 runOnUiThread {
-                    val dialog = android.app.AlertDialog.Builder(this)
-                        .setTitle("Přihlášení přes GitHub")
-                        .setMessage("Otevři GitHub tlačítkem níže a zadej tento jednorázový kód:\n\n$userCode\n\nKód zadávej pouze na github.com a nikomu ho neposílej.")
-                        .setNegativeButton("Zrušit") { _, _ -> cancelled.set(true) }
-                        .setPositiveButton("Otevřít GitHub", null)
-                        .create()
-                    dialog.setOnShowListener {
-                        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(verificationUri)))
-                        }
-                    }
-                    dialog.setOnCancelListener { cancelled.set(true) }
-                    dialog.show()
+                    githubLoginCodeView?.text = userCode
+                    githubLoginOpenButton?.isEnabled = true
+                    githubLoginStatusView?.text = "Zadej kód v GitHubu a potvrď přístup."
+                    setGithubLoginStep(0, "SUCCESS")
+                    setGithubLoginStep(1, "RUNNING")
+                }
+                if (cancelled.get()) throw IOException("Přihlášení bylo zrušeno.")
+                runOnUiThread {
                     networkWorker.execute {
                         try {
                             var interval = response.optLong("interval", 5).coerceAtLeast(1)
@@ -875,12 +1004,13 @@ class MainActivity : Activity() {
                             }
                             if (cancelled.get()) throw IOException("Přihlášení bylo zrušeno.")
                             val credentials = authorized ?: throw IOException("Kód pro přihlášení vypršel. Zkus to znovu.")
+                            setGithubLoginStep(1, "SUCCESS")
+                            setGithubLoginStep(2, "RUNNING")
                             saveGithubCredentials(credentials)
-                            runOnUiThread { dialog.dismiss() }
                             executeGithubTask(credentials, freezeForm, task)
                         } catch (e: Exception) {
                             runOnUiThread {
-                                dialog.dismiss()
+                                failGithubLoginDialog(e.message ?: "Přihlášení přes GitHub selhalo.")
                                 statusView?.text = e.message ?: "Přihlášení přes GitHub selhalo."
                                 toast(statusView?.text.toString())
                                 updateButton?.isEnabled = true
@@ -893,6 +1023,7 @@ class MainActivity : Activity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    failGithubLoginDialog(e.message ?: "Přihlášení přes GitHub selhalo.")
                     statusView?.text = e.message ?: "Přihlášení přes GitHub selhalo."
                     toast(statusView?.text.toString())
                     updateButton?.isEnabled = true
