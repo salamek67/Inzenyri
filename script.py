@@ -1066,6 +1066,21 @@ def record_changelog_release(section, version, fallback):
     return entries
 
 
+def clear_changelog_category(section):
+    try:
+        changelog = CHANGELOG.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise DataError("Soubor CHANGELOG.md nelze načíst.") from exc
+    section_pattern = re.compile(
+        rf"(?ms)^(## {re.escape(section)})\n(.*?)(?=^## |\Z)"
+    )
+    match = section_pattern.search(changelog)
+    if not match:
+        raise DataError(f"V CHANGELOG.md chybí část {section}.")
+    updated = changelog[: match.start(2)] + "\n" + changelog[match.end(2) :]
+    atomic_write_text(updated.rstrip() + "\n")
+
+
 def github_release_exists(tag):
     result = github_cli(["release", "view", tag], capture_output=True, text=True)
     return result.returncode == 0
@@ -1212,6 +1227,22 @@ def commit(message=None):
             ],
             check=True,
         )
+    categories_to_clear = []
+    if web_bump:
+        categories_to_clear.append("Web")
+    if android_bump:
+        categories_to_clear.append("Android")
+    for section in categories_to_clear:
+        clear_changelog_category(section)
+    if categories_to_clear:
+        subprocess.run(["git", "add", "CHANGELOG.md"], cwd=ROOT, check=True)
+        cleanup_message = (
+            "[ci skip] Vyčištění changelogu po bumpu: "
+            + ", ".join(categories_to_clear)
+        )
+        subprocess.run(["git", "commit", "-m", cleanup_message], cwd=ROOT, check=True)
+        subprocess.run(["git", "push", "-u", "origin", "main"], cwd=ROOT, check=True)
+        success("Changelog publikované kategorie vyčištěn.")
 
 
 def help_text():

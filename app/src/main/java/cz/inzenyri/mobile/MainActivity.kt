@@ -2,7 +2,6 @@ package cz.inzenyri.mobile
 
 import android.app.Activity
 import android.app.Dialog
-import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
 import android.graphics.Color
@@ -10,8 +9,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.text.InputType
 import android.text.Editable
 import android.text.Spannable
@@ -45,10 +42,7 @@ import java.nio.file.StandardCopyOption
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
-import java.security.KeyStore
 import java.security.MessageDigest
-import java.security.SecureRandom
 import java.text.SimpleDateFormat
 import java.util.Base64
 import java.util.Calendar
@@ -56,15 +50,10 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.crypto.Cipher
 import javax.crypto.AEADBadTagException
-import javax.crypto.KeyGenerator
-import javax.crypto.Mac
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.SecretKeySpec
 
 class MainActivity : Activity() {
+    private val credentialStore by lazy(LazyThreadSafetyMode.NONE) { SecureCredentialStore(this) }
     private val worker = Executors.newSingleThreadExecutor()
     private val networkWorker = Executors.newSingleThreadExecutor()
     private var darkMode = false
@@ -580,12 +569,54 @@ class MainActivity : Activity() {
             action()
             return
         }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Nahradit rozpracovanou databázi?")
-            .setMessage("Máš položky, které ještě nejsou pushnuté na origin. Při načtení jiné databáze budou ztraceny.")
-            .setNegativeButton("Zpět") { _, _ -> swipeRefreshLayout?.isRefreshing = false }
-            .setPositiveButton("Pokračovat") { _, _ -> action() }
-            .show()
+        val dialog = Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(20), dp(22), dp(20))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val warning = TextView(this).apply {
+            text = "!"
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = rounded(Color.rgb(210, 139, 38), 14)
+        }
+        header.addView(warning, LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) })
+        header.addView(label("Nahradit rozpracovanou databázi?", 20, ink, true),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(header)
+        content.addView(label(
+            "Máš položky, které ještě nejsou pushnuté na origin. Při načtení jiné databáze budou ztraceny.",
+            15, muted, false
+        ), margin(0, 14, 0, 20))
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        actions.addView(button("Zpět") {
+            swipeRefreshLayout?.isRefreshing = false
+            dialog.dismiss()
+        }.apply {
+            setTextColor(ink)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+        actions.addView(button("Pokračovat") {
+            dialog.dismiss()
+            action()
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(actions)
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.setOnCancelListener { swipeRefreshLayout?.isRefreshing = false }
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun askPassword(raw: String, preserveBaseline: Boolean = false) {
@@ -755,9 +786,7 @@ class MainActivity : Activity() {
         return databaseHash(current) != originalDatabaseHash
     }
 
-    private fun databaseHash(value: JSONObject): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toString().toByteArray(StandardCharsets.UTF_8))
-        .joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+    private fun databaseHash(value: JSONObject): String = DatabaseRecords.hash(value)
 
     private fun renderDatabase() {
         val data = database ?: return
@@ -961,72 +990,138 @@ class MainActivity : Activity() {
         var score = 0
         fun showQuestion() {
             if (index >= questions.length()) {
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Výsledek procvičování")
-                    .setMessage("$score / ${questions.length()}")
-                    .setPositiveButton("Hotovo", null)
-                    .setNeutralButton("Zkusit znovu") { _, _ -> index = 0; score = 0; showQuestion() }
-                    .show()
+                val (dialog, content) = customDialog("Výsledek procvičování")
+                content.addView(label("$score / ${questions.length()}", 34, purple, true).apply {
+                    gravity = Gravity.CENTER
+                }, margin(0, 18, 0, 6))
+                content.addView(label("Správné odpovědi", 14, muted, false).apply {
+                    gravity = Gravity.CENTER
+                }, margin(0, 0, 0, 20))
+                val actions = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                actions.addView(button("Zkusit znovu") {
+                    dialog.dismiss()
+                    index = 0
+                    score = 0
+                    showQuestion()
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+                actions.addView(button("Hotovo") { dialog.dismiss() }, LinearLayout.LayoutParams(0, -2, 1f))
+                content.addView(actions)
+                showCustomDialog(dialog)
                 return
             }
             val question = questions.optJSONObject(index)
             if (question == null) { index++; showQuestion(); return }
             val kind = question.optString("type").let { if (it == "binary") "choice" else it }
             val prompt = if (kind == "punctuation") question.optString("sentence") else question.optString("prompt").ifBlank { "Otázka" }
+            val (dialog, content) = customDialog("${item.optString("name")} · ${index + 1}/${questions.length()}")
+            content.addView(label(prompt, 17, ink, true), margin(0, 14, 0, 16))
+            var focusView: View? = null
             if (kind == "choice") {
                 val options = question.optJSONArray("options") ?: JSONArray()
-                val values = Array(options.length()) { options.optString(it) }
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("${item.optString("name")} · ${index + 1}/${questions.length()}")
-                    .setMessage(prompt)
-                    .setSingleChoiceItems(values, -1) { dialog, selected ->
+                val choices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                for (selected in 0 until options.length()) {
+                    choices.addView(button(options.optString(selected)) {
                         if (selected == question.optInt("answer", -1)) score++
-                        index++; dialog.dismiss(); showQuestion()
-                    }
-                    .setNegativeButton("Přeskočit") { _, _ -> index++; showQuestion() }
-                    .show()
+                        index++
+                        dialog.dismiss()
+                        showQuestion()
+                    }, margin(0, 0, 0, 8))
+                }
+                val choiceScroll = ScrollView(this).apply { addView(choices) }
+                content.addView(choiceScroll, LinearLayout.LayoutParams(-1,
+                    dp((options.length() * 56).coerceIn(56, 280))))
+                content.addView(button("Přeskočit") {
+                    index++
+                    dialog.dismiss()
+                    showQuestion()
+                }, margin(0, 8, 0, 0))
             } else {
                 val field = EditText(this).apply {
                     hint = "Napiš odpověď…"
-                    inputType = InputType.TYPE_CLASS_TEXT
+                    textSize = 16f
+                    setTextColor(ink)
+                    setHintTextColor(muted)
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 14)
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                     if (kind == "punctuation") setText(question.optString("sentence"))
                 }
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("${item.optString("name")} · ${index + 1}/${questions.length()}")
-                    .setMessage(prompt)
-                    .setView(field)
-                    .setNegativeButton("Přeskočit") { _, _ -> index++; showQuestion() }
-                    .setPositiveButton("Vyhodnotit") { _, _ ->
-                        val answers = question.optJSONArray("answers") ?: JSONArray().put(question.optString("answer"))
-                        val input = field.text.toString().trim()
-                        val accepted = (0 until answers.length()).any { answerIndex ->
-                            fun normalized(value: String): String {
-                                var result = value.trim()
-                                if (question.optBoolean("ignoreCase", false)) result = result.lowercase(Locale.ROOT)
-                                if (kind == "punctuation") result = result.replace(Regex("\\s+"), " ").replace(Regex("\\s*,\\s*"), ",")
-                                return result
-                            }
-                            normalized(input) == normalized(answers.optString(answerIndex))
+                focusView = field
+                content.addView(field, margin(0, 0, 0, 14))
+                val actions = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                actions.addView(button("Přeskočit") {
+                    index++
+                    dialog.dismiss()
+                    showQuestion()
+                }.apply {
+                    setTextColor(ink)
+                    background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+                }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+                actions.addView(button("Vyhodnotit") {
+                    val answers = question.optJSONArray("answers") ?: JSONArray().put(question.optString("answer"))
+                    val input = field.text.toString().trim()
+                    val accepted = (0 until answers.length()).any { answerIndex ->
+                        fun normalized(value: String): String {
+                            var result = value.trim()
+                            if (question.optBoolean("ignoreCase", false)) result = result.lowercase(Locale.ROOT)
+                            if (kind == "punctuation") result = result.replace(Regex("\\s+"), " ").replace(Regex("\\s*,\\s*"), ",")
+                            return result
                         }
-                        if (accepted) score++
-                        index++; showQuestion()
+                        normalized(input) == normalized(answers.optString(answerIndex))
                     }
-                    .show()
+                    if (accepted) score++
+                    index++
+                    dialog.dismiss()
+                    showQuestion()
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+                content.addView(actions)
             }
+            showCustomDialog(dialog, focusView)
         }
         showQuestion()
     }
 
-    private fun itemType(item: JSONObject): String {
-        val explicit = item.optString("type")
-        if (explicit in setOf("task", "test", "event")) return explicit
-        val text = "${item.optString("name")} ${item.optString("task")}".lowercase(Locale.ROOT)
-        return when {
-            Regex("\\b(test|písem|zkoušen|prověrk)").containsMatchIn(text) -> "test"
-            Regex("\\b(akce|výlet|exkur|vysvědčen|divad|koncert)").containsMatchIn(text) -> "event"
-            else -> "task"
+    private fun customDialog(title: String): Pair<Dialog, LinearLayout> {
+        val dialog = Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(20), dp(22), dp(20))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(label(title, 20, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(button("✕") { dialog.dismiss() }.apply {
+            minWidth = dp(42)
+            minHeight = dp(42)
+            setPadding(0, 0, 0, 0)
+        }, LinearLayout.LayoutParams(dp(42), dp(42)))
+        content.addView(header)
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setCanceledOnTouchOutside(true)
+        return dialog to content
+    }
+
+    private fun showCustomDialog(dialog: Dialog, focusView: View? = null) {
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
+        focusView?.let { view ->
+            view.requestFocus()
+            dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
         }
     }
+
+    private fun itemType(item: JSONObject): String = DatabaseRecords.type(item)
 
     private fun formattedText(value: String): CharSequence {
         val pattern = Regex("""\[([^\]]+)]\((https?://[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`""")
@@ -1051,8 +1146,7 @@ class MainActivity : Activity() {
         return output
     }
 
-    private fun itemKey(item: JSONObject): String = listOf("type", "name", "date", "task")
-        .joinToString("\u001f") { field -> if (field == "type") itemType(item) else item.optString(field) }
+    private fun itemKey(item: JSONObject): String = DatabaseRecords.key(item)
 
     private fun doneItems(): MutableSet<String> = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE)
         .getStringSet(DONE_ITEMS_KEY, emptySet())?.toMutableSet() ?: mutableSetOf()
@@ -1123,20 +1217,28 @@ class MainActivity : Activity() {
         if (!maintainerMode) return
         val tasks = database?.optJSONArray("tasks") ?: return
         val item = tasks.optJSONObject(index) ?: return
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Smazat položku?")
-            .setMessage(item.optString("name").ifBlank { "Bez názvu" })
-            .setNegativeButton("Zrušit", null)
-            .setPositiveButton("Smazat") { _, _ ->
-                val done = doneItems().apply { remove(itemKey(item)) }
-                getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, done).apply()
-                tasks.remove(index)
-                statusView?.text = "Položka smazána · ulož změny pushnutím na origin."
-                renderDatabase()
-                persistLocalDatabase()
-                toast("Položka smazána")
-            }
-            .show()
+        val (dialog, content) = customDialog("Smazat položku?")
+        content.addView(label(item.optString("name").ifBlank { "Bez názvu" }, 15, muted, false), margin(0, 12, 0, 18))
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        actions.addView(button("Zrušit") { dialog.dismiss() }.apply {
+            setTextColor(ink)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+        actions.addView(button("Smazat") {
+            dialog.dismiss()
+            val done = doneItems().apply { remove(itemKey(item)) }
+            getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, done).apply()
+            tasks.remove(index)
+            statusView?.text = "Položka smazána · ulož změny pushnutím na origin."
+            renderDatabase()
+            persistLocalDatabase()
+            toast("Položka smazána")
+        }.apply { background = rounded(Color.rgb(183, 54, 66), 14) }, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(actions)
+        showCustomDialog(dialog)
     }
 
     private fun addItem() {
@@ -1301,36 +1403,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun githubRequest(path: String, method: String = "GET", token: String? = null, body: String? = null): String {
-        val connection = (URL("https://api.github.com/$path").openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            setRequestProperty("User-Agent", "Inzenyri-Android")
-            if (token != null) setRequestProperty("Authorization", "Bearer $token")
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            }
-        }
-        try {
-            if (body != null) connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                val detail = try { JSONObject(response).optString("message") } catch (_: Exception) { "" }
-                throw IOException("GitHub HTTP $code${if (detail.isNotBlank()) ": $detail" else ""}")
-            }
-            return response
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private data class GitHubCredentials(val accessToken: String, val refreshToken: String, val expiresAt: Long)
+    private fun githubRequest(path: String, method: String = "GET", token: String? = null, body: String? = null): String =
+        GitHubApiClient.request(path, method, token, body)
 
     private fun runGithubTask(freezeForm: Boolean = false, task: (String) -> Unit) {
         val clientId = BuildConfig.GITHUB_APP_CLIENT_ID
@@ -1624,41 +1698,11 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun oauthRequest(endpoint: String, fields: Map<String, String>, allowOAuthError: Boolean = false): JSONObject {
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            doOutput = true
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
-            setRequestProperty("User-Agent", "Inzenyri-Android")
-        }
-        val body = fields.entries.joinToString("&") { (key, value) ->
-            "${URLEncoder.encode(key, "UTF-8")}=${URLEncoder.encode(value, "UTF-8")}"
-        }
-        try {
-            connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readText() }.orEmpty()
-            val json = JSONObject(response)
-            if (code !in 200..299) {
-                val detail = json.optString("error_description").ifBlank { json.optString("error") }
-                throw IOException("GitHub OAuth HTTP $code${if (detail.isNotBlank()) ": $detail" else ""}.")
-            }
-            if (!allowOAuthError && json.has("error")) throw IOException(json.optString("error_description", json.optString("error")))
-            return json
-        } finally { connection.disconnect() }
-    }
+    private fun oauthRequest(endpoint: String, fields: Map<String, String>, allowOAuthError: Boolean = false): JSONObject =
+        GitHubApiClient.oauthRequest(endpoint, fields, allowOAuthError)
 
-    private fun credentialsFrom(json: JSONObject, oldRefreshToken: String = ""): GitHubCredentials {
-        val access = json.getString("access_token")
-        val refresh = json.optString("refresh_token").ifBlank { oldRefreshToken }
-        val lifetime = json.optLong("expires_in", 28_800)
-        require(refresh.isNotBlank()) { "GitHub neposlal obnovovací token." }
-        return GitHubCredentials(access, refresh, System.currentTimeMillis() + lifetime * 1000)
-    }
+    private fun credentialsFrom(json: JSONObject, oldRefreshToken: String = ""): GitHubCredentials =
+        GitHubApiClient.credentialsFrom(json, oldRefreshToken)
 
     private fun validCredentials(credentials: GitHubCredentials): GitHubCredentials {
         if (credentials.expiresAt > System.currentTimeMillis() + 60_000) return credentials
@@ -1715,97 +1759,15 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun tokenKey(): SecretKey {
-        return keystoreKey(TOKEN_KEY_ALIAS)
-    }
-
-    private fun databasePasswordKey(): SecretKey = keystoreKey(DATABASE_PASSWORD_KEY_ALIAS)
-
-    private fun keystoreKey(alias: String): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(alias, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
-            init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setRandomizedEncryptionRequired(true)
-                .build())
-            generateKey()
-        }
-    }
-
-    private fun saveDatabasePassword(value: CharArray) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, databasePasswordKey())
-        val encrypted = cipher.doFinal(String(value).toByteArray(StandardCharsets.UTF_8))
-        getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit()
-            .putString(SAVED_PASSWORD_IV, Base64.getEncoder().encodeToString(cipher.iv))
-            .putString(SAVED_PASSWORD_VALUE, Base64.getEncoder().encodeToString(encrypted))
-            .apply()
-    }
-
-    private fun readSavedDatabasePassword(): CharArray? {
-        return try {
-            val prefs = getSharedPreferences(DB_PREFS, MODE_PRIVATE)
-            val iv = prefs.getString(SAVED_PASSWORD_IV, null) ?: return null
-            val encrypted = prefs.getString(SAVED_PASSWORD_VALUE, null) ?: return null
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, databasePasswordKey(), GCMParameterSpec(128, Base64.getDecoder().decode(iv)))
-            String(cipher.doFinal(Base64.getDecoder().decode(encrypted)), StandardCharsets.UTF_8).toCharArray()
-        } catch (_: Exception) {
-            forgetDatabasePassword()
-            null
-        }
-    }
-
-    private fun forgetDatabasePassword() {
-        getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit()
-            .remove(SAVED_PASSWORD_IV)
-            .remove(SAVED_PASSWORD_VALUE)
-            .apply()
-    }
-
-    private fun saveGithubCredentials(credentials: GitHubCredentials) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, tokenKey())
-        val payload = JSONObject()
-            .put("access_token", credentials.accessToken)
-            .put("refresh_token", credentials.refreshToken)
-            .put("expires_at", credentials.expiresAt)
-            .toString()
-        val encrypted = cipher.doFinal(payload.toByteArray(StandardCharsets.UTF_8))
-        getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit()
-            .putString("iv", Base64.getEncoder().encodeToString(cipher.iv))
-            .putString("credentials", Base64.getEncoder().encodeToString(encrypted))
-            .remove("token")
-            // Persist before starting the first API call. The app may be backgrounded
-            // while GitHub's device authorization page is open, so an async write can
-            // otherwise be lost if Android kills the process at that point.
-            .commit()
-            .also { persisted ->
-                if (!persisted) throw IOException("Přihlášení ke GitHubu se nepodařilo uložit do zařízení.")
-            }
-    }
-
-    private fun readGithubCredentials(): GitHubCredentials? {
-        return try {
-            val prefs = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE)
-            val iv = prefs.getString("iv", null) ?: return null
-            val encrypted = prefs.getString("credentials", null) ?: return null
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, tokenKey(), GCMParameterSpec(128, Base64.getDecoder().decode(iv)))
-            val data = JSONObject(String(cipher.doFinal(Base64.getDecoder().decode(encrypted)), StandardCharsets.UTF_8))
-            GitHubCredentials(data.getString("access_token"), data.getString("refresh_token"), data.getLong("expires_at"))
-        } catch (_: Exception) { null }
-    }
-
-    private fun hasStoredGithubCredentials(): Boolean {
-        val prefs = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE)
-        return prefs.contains("iv") || prefs.contains("credentials") || prefs.contains("token")
-    }
+    private fun saveDatabasePassword(value: CharArray) = credentialStore.saveDatabasePassword(value)
+    private fun readSavedDatabasePassword(): CharArray? = credentialStore.readSavedDatabasePassword()
+    private fun forgetDatabasePassword() = credentialStore.forgetDatabasePassword()
+    private fun saveGithubCredentials(credentials: GitHubCredentials) = credentialStore.saveGithubCredentials(credentials)
+    private fun readGithubCredentials(): GitHubCredentials? = credentialStore.readGithubCredentials()
+    private fun hasStoredGithubCredentials(): Boolean = credentialStore.hasStoredGithubCredentials()
 
     private fun clearGithubToken() {
-        getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit().clear().apply()
+        credentialStore.clearGithubCredentials()
         maintainerMode = false
         runOnUiThread {
             maintainerButton?.text = "🔧"
@@ -1956,74 +1918,12 @@ class MainActivity : Activity() {
     }
 
     private fun encryptedOutput(data: JSONObject, pass: CharArray, source: JSONObject): String {
-        val sortedItems = (0 until data.getJSONArray("tasks").length())
-            .map { data.getJSONArray("tasks").getJSONObject(it) }
-            .sortedBy { parseDatabaseDate(it.optString("date"))?.time ?: Long.MAX_VALUE }
-        data.put("tasks", JSONArray(sortedItems))
-        val salt = ByteArray(16).also(SecureRandom()::nextBytes)
-        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(derive(pass, salt), "AES"), GCMParameterSpec(128, iv))
-        cipher.updateAAD("inzenyri-data:v1".toByteArray(StandardCharsets.UTF_8))
-        val encrypted = cipher.doFinal(data.toString().toByteArray(StandardCharsets.UTF_8))
-        val out = JSONObject(source.toString())
-        out.put("dbVersion", nextVersion(source.optString("dbVersion")))
-        out.put("kdf", JSONObject().put("name", "PBKDF2").put("hash", "SHA-256").put("iterations", ITERATIONS).put("salt", b64(salt)))
-        out.put("cipher", JSONObject().put("name", "AES-GCM").put("keyLength", 256).put("tagLength", 128).put("iv", b64(iv)))
-        out.put("ciphertext", b64(encrypted))
-        return out.toString(2) + "\n"
+        return DatabaseCipher.encrypt(data, pass, source)
     }
 
-    private fun decrypt(envelope: JSONObject, pass: CharArray): ByteArray {
-        require(envelope.optString("format") == "inzenyri-encrypted-data" && envelope.optInt("version") == 1) { "Nepodporovaný formát." }
-        val kdf = envelope.getJSONObject("kdf")
-        val cipherInfo = envelope.getJSONObject("cipher")
-        require(kdf.optString("name") == "PBKDF2" && kdf.optString("hash") == "SHA-256")
-        require(cipherInfo.optString("name") == "AES-GCM" && cipherInfo.optInt("tagLength") == 128)
-        val salt = unb64(kdf.getString("salt"))
-        val iv = unb64(cipherInfo.getString("iv"))
-        require(salt.size >= 16 && iv.size == 12)
-        val aes = Cipher.getInstance("AES/GCM/NoPadding")
-        aes.init(Cipher.DECRYPT_MODE, SecretKeySpec(derive(pass, salt, kdf.optInt("iterations", ITERATIONS)), "AES"), GCMParameterSpec(128, iv))
-        aes.updateAAD("inzenyri-data:v1".toByteArray(StandardCharsets.UTF_8))
-        return aes.doFinal(unb64(envelope.getString("ciphertext")))
-    }
+    private fun decrypt(envelope: JSONObject, pass: CharArray): ByteArray = DatabaseCipher.decrypt(envelope, pass)
 
-    private fun derive(pass: CharArray, salt: ByteArray, iterations: Int = ITERATIONS): ByteArray {
-        require(iterations in 100_000..2_000_000) { "Neplatné parametry klíče." }
-        // hashlib.pbkdf2_hmac() in script.py consumes UTF-8 password bytes.
-        // Doing PBKDF2 here explicitly avoids provider-specific char[] conversion.
-        val passwordBytes = String(pass).toByteArray(StandardCharsets.UTF_8)
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(passwordBytes, "HmacSHA256"))
-        val block = mac.doFinal(salt + byteArrayOf(0, 0, 0, 1))
-        val result = block.copyOf()
-        var previous = block
-        repeat(iterations - 1) {
-            previous = mac.doFinal(previous)
-            for (index in result.indices) result[index] = (result[index].toInt() xor previous[index].toInt()).toByte()
-        }
-        passwordBytes.fill(0)
-        previous.fill(0)
-        return result
-    }
-
-    private fun nextVersion(current: String): String {
-        val now = Calendar.getInstance()
-        val prefix = String.format(Locale.ROOT, "%02d.%d.%d", now.get(Calendar.YEAR) % 100, now.get(Calendar.MONTH) + 1, now.get(Calendar.DAY_OF_MONTH))
-        val match = Regex("^(\\d{2}\\.\\d{1,2}\\.\\d{1,2})-(\\d+)$").matchEntire(current)
-        val next = if (match?.groupValues?.get(1) == prefix) match.groupValues[2].toInt() + 1 else 1
-        return "$prefix-$next"
-    }
-
-    private fun parseDatabaseDate(value: String): Date? {
-        for (pattern in listOf("dd.MM.yyyy", "dd.MM.yy", "yyyy-MM-dd")) {
-            try {
-                return SimpleDateFormat(pattern, Locale.ROOT).apply { isLenient = false }.parse(value)
-            } catch (_: Exception) { }
-        }
-        return null
-    }
+    private fun parseDatabaseDate(value: String): Date? = DatabaseRecords.parseDate(value)
 
     private fun selectType(type: String) {
         selectedType = type
@@ -2037,12 +1937,125 @@ class MainActivity : Activity() {
     }
 
     private fun chooseDate() {
-        val date = parseDate(dateValue) ?: Date()
-        val calendar = Calendar.getInstance().apply { time = date }
-        DatePickerDialog(this, { _, year, month, day ->
-            dateValue = String.format(Locale.ROOT, "%02d.%02d.%04d", day, month + 1, year)
+        val selectedDate = parseDate(dateValue) ?: Date()
+        val selectedCalendar = Calendar.getInstance().apply { time = selectedDate }
+        val visibleMonth = (selectedCalendar.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val surface = if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255)
+        val dialog = Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = rounded(surface, 24)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(label("Vybrat datum", 22, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(button("✕") { dialog.dismiss() }.apply {
+            minWidth = dp(42)
+            minHeight = dp(42)
+            setPadding(0, 0, 0, 0)
+        }, LinearLayout.LayoutParams(dp(42), dp(42)))
+        content.addView(header)
+        content.addView(label("Vyber termín položky", 13, muted, false), margin(0, 4, 0, 16))
+
+        val monthHeading = label("", 17, ink, true).apply { gravity = Gravity.CENTER }
+        val calendarGrid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val weekdays = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("Po", "Út", "St", "Čt", "Pá", "So", "Ne").forEach { day ->
+            weekdays.addView(label(day, 12, muted, true).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(0, dp(32), 1f))
+        }
+        fun renderMonth() {
+            val czechLocale = Locale("cs", "CZ")
+            val monthName = SimpleDateFormat("LLLL yyyy", czechLocale).format(visibleMonth.time)
+            monthHeading.text = monthName.replaceFirstChar { it.titlecase(czechLocale) }
+            calendarGrid.removeAllViews()
+            val firstDayOffset = (visibleMonth.get(Calendar.DAY_OF_WEEK) - Calendar.MONDAY + 7) % 7
+            val daysInMonth = visibleMonth.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val weekCount = (firstDayOffset + daysInMonth + 6) / 7
+            for (week in 0 until weekCount) {
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                for (weekday in 0..6) {
+                    val day = week * 7 + weekday - firstDayOffset + 1
+                    val cell = if (day in 1..daysInMonth) {
+                        val isSelected = selectedCalendar.get(Calendar.YEAR) == visibleMonth.get(Calendar.YEAR) &&
+                            selectedCalendar.get(Calendar.MONTH) == visibleMonth.get(Calendar.MONTH) &&
+                            selectedCalendar.get(Calendar.DAY_OF_MONTH) == day
+                        TextView(this).apply {
+                            text = day.toString()
+                            textSize = 14f
+                            gravity = Gravity.CENTER
+                            setTextColor(if (isSelected) Color.WHITE else ink)
+                            typeface = if (isSelected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                            background = if (isSelected) rounded(purple, 50) else rounded(surface, 50)
+                            isClickable = true
+                            setOnClickListener {
+                                selectedCalendar.set(visibleMonth.get(Calendar.YEAR), visibleMonth.get(Calendar.MONTH), day)
+                                dateValue = String.format(Locale.ROOT, "%02d.%02d.%04d",
+                                    selectedCalendar.get(Calendar.DAY_OF_MONTH),
+                                    selectedCalendar.get(Calendar.MONTH) + 1,
+                                    selectedCalendar.get(Calendar.YEAR))
+                                dateButton?.text = "Datum · $dateValue"
+                                dialog.dismiss()
+                            }
+                        }
+                    } else {
+                        TextView(this)
+                    }
+                    row.addView(cell, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                        setMargins(dp(2), dp(2), dp(2), dp(2))
+                    })
+                }
+                calendarGrid.addView(row)
+            }
+        }
+
+        val monthNavigation = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        monthNavigation.addView(button("‹") {
+            visibleMonth.add(Calendar.MONTH, -1)
+            renderMonth()
+        }.apply { setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14) },
+            LinearLayout.LayoutParams(dp(48), dp(44)))
+        monthNavigation.addView(monthHeading, LinearLayout.LayoutParams(0, dp(44), 1f))
+        monthNavigation.addView(button("›") {
+            visibleMonth.add(Calendar.MONTH, 1)
+            renderMonth()
+        }.apply { setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14) },
+            LinearLayout.LayoutParams(dp(48), dp(44)))
+        content.addView(monthNavigation, margin(0, 0, 0, 8))
+        content.addView(weekdays)
+        content.addView(calendarGrid)
+        renderMonth()
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        actions.addView(button("Dnes") {
+            dateValue = today()
             dateButton?.text = "Datum · $dateValue"
-        }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
+            dialog.dismiss()
+        }.apply { setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14) },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+        actions.addView(button("Zavřít") { dialog.dismiss() }, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(actions, margin(0, 12, 0, 0))
+
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun input(hintText: String, multiline: Boolean) = EditText(this).apply {
@@ -2097,22 +2110,15 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        private const val ITERATIONS = 600_000
         private const val GITHUB_OWNER = "salamek67"
         private const val GITHUB_REPO = "Inzenyri"
         private const val GITHUB_BRANCH = "main"
         private const val RELEASE_APK_NAME = "inzenyri-android.apk"
-        private const val TOKEN_PREFS = "github_credentials"
-        private const val TOKEN_KEY_ALIAS = "inzenyri_github_token"
-        private const val DATABASE_PASSWORD_KEY_ALIAS = "inzenyri_database_password"
+        private const val TOKEN_PREFS = SecureCredentialStore.PREFERENCES
         private const val DB_PREFS = "database_state"
         private const val ITEM_PREFS = "item_state"
         private const val DB_BASELINE_HASH = "baseline_sha256"
-        private const val SAVED_PASSWORD_IV = "database_password_iv"
-        private const val SAVED_PASSWORD_VALUE = "database_password_value"
         private const val DONE_ITEMS_KEY = "done_items"
-        private fun b64(value: ByteArray) = Base64.getEncoder().encodeToString(value)
-        private fun unb64(value: String) = Base64.getDecoder().decode(value)
         private fun today() = SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(Date())
         private fun parseDate(value: String): Date? = try {
             SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).apply { isLenient = false }.parse(value)
