@@ -1184,7 +1184,7 @@ def commit(message=None):
             f"{android_previous_version}...{android_bump}"
         )
         android_release_notes = (
-            f"Android {android_bump}\n\n{app_entries}\n\n"
+            f"{app_entries}\n\n"
             f"**Full Changelog**: {compare_url}"
         )
         bumped_versions.append(f"Android {android_bump}")
@@ -1206,7 +1206,7 @@ def commit(message=None):
         github_cli(
             [
                 "release", "create", android_bump,
-                "--title", f"Inženýři Android {android_bump}",
+                "--title", android_bump,
                 "--notes", android_release_notes,
                 "--target", "main",
             ],
