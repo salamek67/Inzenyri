@@ -12,11 +12,18 @@ import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.text.InputType
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
+import android.text.style.URLSpan
+import android.text.method.LinkMovementMethod
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -27,6 +34,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -55,7 +64,7 @@ class MainActivity : Activity() {
     private val ink = Color.rgb(31, 38, 56)
     private val muted = Color.rgb(103, 113, 132)
     private var database: JSONObject? = null
-    private var originalDatabase: String? = null
+    private var originalDatabaseHash: String? = null
     private var password: CharArray? = null
     private var sourceEnvelope: JSONObject? = null
     private var selectedType = "task"
@@ -71,18 +80,28 @@ class MainActivity : Activity() {
     private var dateButton: Button? = null
     private var exportButton: Button? = null
     private var pushButton: Button? = null
+    private var addButton: Button? = null
     private var updateButton: Button? = null
     private var pendingApk: File? = null
     private var updateAsset: JSONObject? = null
-    private var sourceButton: Button? = null
     private var originButton: Button? = null
+    private var maintainerButton: Button? = null
+    private var itemsContainer: LinearLayout? = null
+    private var workspaceDir: File? = null
+    private var databaseFile: File? = null
+    private var maintainerMode = false
 
-    private val openDocument = registerForActivityResultCompat(101)
     private val createDocument = registerForActivityResultCompat(102)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        workspaceDir = File(filesDir, "inzenyri").apply {
+            if (!exists() && !mkdirs()) throw IOException("Lokální složku aplikace se nepodařilo vytvořit.")
+        }
+        databaseFile = File(workspaceDir, "data.enc.json")
+        maintainerMode = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).getBoolean("maintainer_mode", false)
         render()
+        openStoredDatabaseOrClone()
         checkForUpdate(silent = true)
     }
 
@@ -100,12 +119,6 @@ class MainActivity : Activity() {
         if (resultCode != RESULT_OK || data?.data == null) return
         val uri = data.data!!
         when (requestCode) {
-            101 -> {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                val raw = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                if (raw == null) return toast("Soubor se nepodařilo otevřít.")
-                askPassword(raw)
-            }
             102 -> {
                 worker.execute {
                     try {
@@ -133,17 +146,33 @@ class MainActivity : Activity() {
         val scroller = ScrollView(this).apply { addView(page) }
         setContentView(scroller)
 
-        page.addView(label("INŽENÝŘI", 13, purple, true))
-        page.addView(label("Rychlé přidání", 30, ink, true), margin(0, 4, 0, 4))
-        page.addView(label("Otevři šifrovaná data, přidej položku a pushni ji na origin.", 15, muted, false), margin(0, 0, 0, 16))
-        sourceButton = button("Otevřít data.enc.json") { chooseSource() }
-        page.addView(sourceButton, margin(0, 4, 0, 8))
-        originButton = button("Načíst databázi z origin") { loadFromOrigin() }
-        page.addView(originButton, margin(0, 0, 0, 8))
-        statusView = label("Data zůstávají zašifrovaná i v uloženém souboru.", 13, muted, false)
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        topBar.addView(label("INŽENÝŘI", 13, purple, true), LinearLayout.LayoutParams(0, -2, 1f))
+        maintainerButton = Button(this).apply {
+            text = if (maintainerMode) "🔑" else "🔧"
+            contentDescription = if (maintainerMode) "GitHub maintainer účet je propojen" else "Propojit maintainer účet s GitHubem"
+            textSize = 22f
+            minWidth = dp(48)
+            minHeight = dp(48)
+            isAllCaps = false
+            background = rounded(Color.WHITE, 14)
+            setOnClickListener { connectMaintainer() }
+        }
+        topBar.addView(maintainerButton)
+        page.addView(topBar)
+        page.addView(label("Přehled", 30, ink, true), margin(0, 4, 0, 4))
+        page.addView(label("Testy, úkoly a akce na jednom místě.", 15, muted, false), margin(0, 0, 0, 16))
+        originButton = button("Pull databázi z origin") { loadFromOrigin() }
+        page.addView(originButton, margin(0, 4, 0, 8))
+        statusView = label("Připravuji lokální data…", 13, muted, false)
         page.addView(statusView, margin(0, 0, 0, 12))
+        itemsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        page.addView(itemsContainer)
         exportButton = button("Uložit šifrovanou databázi") { chooseDestination() }.also { it.visibility = View.GONE }
-        page.addView(exportButton, margin(0, 0, 0, 12))
+        page.addView(exportButton, margin(0, 0, 0, 8))
         pushButton = button("Pushnout DB na origin") { pushToOrigin() }.also { it.visibility = View.GONE }
         page.addView(pushButton, margin(0, 0, 0, 12))
         updateButton = button("Zkontrolovat aktualizace aplikace") {
@@ -168,45 +197,102 @@ class MainActivity : Activity() {
             solutionInput = input("Řešení v Markdownu (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             quizPromptInput = input("Otázka (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             quizAnswersInput = input("Správné odpovědi (odděl |)", false).also { addView(it, margin(0, 8, 0, 0)) }
-            addView(button("Přidat položku") { addItem() }, margin(0, 16, 0, 4))
+            addButton = button("Přidat položku") { addItem() }
+            addView(addButton, margin(0, 16, 0, 4))
         }
         selectType("task")
     }
 
-    private fun chooseSource() {
-        confirmReplacingDatabase {
-            chooseSourceDocument()
+    private fun openStoredDatabaseOrClone() {
+        val local = databaseFile ?: return
+        if (local.isFile && local.length() > 0) {
+            try {
+                statusView?.text = "Lokální databáze připravená · zadej heslo."
+                askPassword(local.readText(StandardCharsets.UTF_8), preserveBaseline = true)
+                return
+            } catch (e: Exception) {
+                statusView?.text = "Lokální databázi se nepodařilo načíst: ${e.message}"
+            }
+        }
+        originButton?.isEnabled = false
+        statusView?.text = "Stahuji šifrovanou databázi do složky aplikace…"
+        networkWorker.execute {
+            try {
+                val token = readGithubCredentials()?.let { saved -> try { validCredentials(saved).accessToken } catch (_: Exception) { null } }
+                val raw = try { fetchRemoteDatabase(token) } catch (e: Exception) {
+                    if (token == null) throw e
+                    fetchRemoteDatabase()
+                }
+                saveLocalDatabase(raw)
+                runOnUiThread {
+                    originButton?.isEnabled = true
+                    statusView?.text = "Databáze stažena. Zadej heslo."
+                    askPassword(raw)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    originButton?.isEnabled = true
+                    statusView?.text = "Databázi se nepodařilo stáhnout. Zkontroluj připojení a zkus Pull."
+                    toast(e.message ?: "Stažení databáze se nezdařilo.")
+                }
+            }
         }
     }
 
-    private fun chooseSourceDocument() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/json"
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+    private fun fetchRemoteDatabase(token: String? = null): String {
+        val response = JSONObject(githubRequest(
+            "repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH",
+            token = token
+        ))
+        val encoded = response.optString("content").ifBlank {
+            response.optJSONObject("content")?.optString("content").orEmpty()
         }
-        openDocument(intent)
+        require(encoded.isNotBlank()) { "GitHub API nevrátil obsah databáze." }
+        val raw = String(Base64.getMimeDecoder().decode(encoded), StandardCharsets.UTF_8)
+        JSONObject(raw)
+        return raw
+    }
+
+    private fun saveLocalDatabase(raw: String) {
+        val target = databaseFile ?: error("Lokální složka aplikace není připravená.")
+        val temporary = File(target.parentFile, "data.enc.json.tmp")
+        temporary.writeText(raw, StandardCharsets.UTF_8)
+        try {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
     }
 
     private fun loadFromOrigin() {
         confirmReplacingDatabase {
-            runGithubTask { token ->
-                val response = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH", token = token))
-                val encoded = response.optString("content").ifBlank {
-                    response.optJSONObject("content")?.optString("content").orEmpty()
-                }
-                require(encoded.isNotBlank()) { "GitHub API nevrátil obsah databáze." }
-                val raw = String(Base64.getMimeDecoder().decode(encoded), StandardCharsets.UTF_8)
-                runOnUiThread {
-                    statusView?.text = "Databáze stažena z origin. Zadej heslo."
-                    askPassword(raw)
+            originButton?.isEnabled = false
+            statusView?.text = "Stahuji databázi z origin…"
+            networkWorker.execute {
+                try {
+                    val token = readGithubCredentials()?.let { saved -> try { validCredentials(saved).accessToken } catch (_: Exception) { null } }
+                    val raw = try { fetchRemoteDatabase(token) } catch (e: Exception) {
+                        if (token == null) throw e
+                        fetchRemoteDatabase()
+                    }
+                    runOnUiThread {
+                        originButton?.isEnabled = true
+                        statusView?.text = "Databáze stažena z origin. Zadej heslo."
+                        askPassword(raw)
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        originButton?.isEnabled = true
+                        statusView?.text = e.message ?: "Stažení databáze se nezdařilo."
+                        toast(statusView?.text.toString())
+                    }
                 }
             }
         }
     }
 
     private fun confirmReplacingDatabase(action: () -> Unit) {
-        if (database == null || database.toString() == originalDatabase) {
+        if (database == null || !isDatabaseDirty()) {
             action()
             return
         }
@@ -218,7 +304,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun askPassword(raw: String) {
+    private fun askPassword(raw: String, preserveBaseline: Boolean = false) {
         val field = EditText(this).apply {
             hint = "Heslo k databázi"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -246,12 +332,22 @@ class MainActivity : Activity() {
                                     password?.fill('\u0000')
                                     password = candidate
                                     database = parsed
-                                    originalDatabase = parsed.toString()
+                                    val savedBaseline = getSharedPreferences(DB_PREFS, MODE_PRIVATE).getString(DB_BASELINE_HASH, null)
+                                    originalDatabaseHash = if (preserveBaseline && savedBaseline != null) savedBaseline else databaseHash(parsed).also {
+                                        getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, it).apply()
+                                    }
                                     sourceEnvelope = envelope
-                                    form?.visibility = View.VISIBLE
-                                    exportButton?.visibility = View.VISIBLE
-                                    pushButton?.visibility = View.VISIBLE
+                                    if (!preserveBaseline) {
+                                        try { saveLocalDatabase(raw) } catch (e: Exception) {
+                                            toast(e.message ?: "Databázi se nepodařilo uložit do zařízení.")
+                                        }
+                                    }
+                                    itemsContainer?.visibility = View.VISIBLE
+                                    form?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
+                                    exportButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
+                                    pushButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
                                     statusView?.text = "Odemčeno · ${parsed.getJSONArray("tasks").length()} položek"
+                                    renderDatabase()
                                     dialog.dismiss()
                                 }
                             } catch (_: Exception) {
@@ -269,7 +365,242 @@ class MainActivity : Activity() {
             }
     }
 
+    private fun connectMaintainer() {
+        runGithubTask { token ->
+            val user = JSONObject(githubRequest("user", token = token)).optString("login")
+            require(user.isNotBlank()) { "GitHub nevrátil přihlášený účet." }
+            val repo = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO", token = token))
+            require(repo.optJSONObject("permissions")?.optBoolean("push") == true) {
+                "Přihlášený GitHub účet nemá právo zápisu do repozitáře."
+            }
+            if (database == null) {
+                val raw = fetchRemoteDatabase(token)
+                saveLocalDatabase(raw)
+                runOnUiThread {
+                    statusView?.text = "Databáze stažena. Zadej heslo."
+                    askPassword(raw)
+                }
+            } else {
+                githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH", token = token)
+            }
+            runOnUiThread {
+                maintainerMode = true
+                getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit().putBoolean("maintainer_mode", true).apply()
+                maintainerButton?.text = "🔑"
+                maintainerButton?.contentDescription = "GitHub propojen jako $user"
+                form?.visibility = if (database != null) View.VISIBLE else View.GONE
+                exportButton?.visibility = if (database != null) View.VISIBLE else View.GONE
+                pushButton?.visibility = if (database != null) View.VISIBLE else View.GONE
+                statusView?.text = "GitHub propojen · $user. Přidávání je povolené."
+                toast("GitHub propojen")
+            }
+        }
+    }
+
+    private fun isDatabaseDirty(): Boolean {
+        val current = database ?: return false
+        return databaseHash(current) != originalDatabaseHash
+    }
+
+    private fun databaseHash(value: JSONObject): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toString().toByteArray(StandardCharsets.UTF_8))
+        .joinToString("") { "%02x".format(Locale.ROOT, it.toInt() and 0xff) }
+
+    private fun renderDatabase() {
+        val data = database ?: return
+        val container = itemsContainer ?: return
+        container.removeAllViews()
+        val tasks = data.optJSONArray("tasks") ?: JSONArray()
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.time
+        val allEntries = (0 until tasks.length()).mapNotNull { index ->
+            val item = tasks.optJSONObject(index) ?: return@mapNotNull null
+            val date = parseDatabaseDate(item.optString("date"))
+            Triple(item, index, date)
+        }.sortedWith(compareBy<Triple<JSONObject, Int, Date?>>({ it.third ?: Date(Long.MAX_VALUE) }, { it.second }))
+        val activeEntries = allEntries.filter { it.third == null || !it.third.before(today) }
+        val doneKeys = doneItems().apply { retainAll(allEntries.map { itemKey(it.first) }.toSet()) }
+        getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, doneKeys).apply()
+        val categories = listOf("test" to "Testy", "task" to "Úkoly", "event" to "Akce")
+        for ((type, title) in categories) {
+            val categoryItems = activeEntries.filter { itemType(it.first) == type && itemKey(it.first) !in doneKeys }
+            addSection(container, title, categoryItems)
+        }
+        val completed = activeEntries.filter { itemKey(it.first) in doneKeys }
+        if (completed.isNotEmpty()) addSection(container, "Dokončené", completed)
+        if (activeEntries.isEmpty()) container.addView(label("Žádné nadcházející položky.", 15, muted, false), margin(0, 8, 0, 16))
+    }
+
+    private fun addSection(container: LinearLayout, title: String, entries: List<Triple<JSONObject, Int, Date?>>) {
+        if (entries.isEmpty()) return
+        container.addView(label("$title · ${entries.size}", 20, ink, true), margin(0, 12, 0, 8))
+        entries.forEach { (item, _, _) -> container.addView(itemCard(item), margin(0, 0, 0, 10)) }
+    }
+
+    private fun itemCard(item: JSONObject): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = rounded(Color.WHITE, 18)
+        }
+        val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val checkbox = CheckBox(this).apply {
+            isChecked = itemKey(item) in doneItems()
+            contentDescription = if (isChecked) "Vrátit mezi aktivní" else "Označit jako dokončené"
+            setOnCheckedChangeListener { _, checked ->
+                val values = doneItems()
+                if (checked) values.add(itemKey(item)) else values.remove(itemKey(item))
+                getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, values).apply()
+                renderDatabase()
+            }
+        }
+        val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        titleBlock.addView(label(item.optString("name").ifBlank { "Bez názvu" }, 17, ink, true))
+        titleBlock.addView(label(item.optString("date").ifBlank { "Bez data" }, 13, muted, false), margin(0, 2, 0, 0))
+        heading.addView(checkbox)
+        heading.addView(titleBlock, LinearLayout.LayoutParams(0, -2, 1f))
+        card.addView(heading)
+        val description = item.optString("task").trim()
+        if (description.isNotEmpty()) {
+            val body = label(description, 15, ink, false).apply {
+                text = formattedText(description)
+                setLineSpacing(dp(2).toFloat(), 1f)
+                linksClickable = true
+                movementMethod = LinkMovementMethod.getInstance()
+            }
+            card.addView(body, margin(0, 10, 0, 0))
+        }
+        val solution = item.optString("solution").trim()
+        if (solution.isNotEmpty()) {
+            var visible = false
+            val solutionText = label(solution, 14, muted, false).apply {
+                text = formattedText(solution)
+                linksClickable = true
+                movementMethod = LinkMovementMethod.getInstance()
+                visibility = View.GONE
+            }
+            val initialLabel = if (itemType(item) == "test") "Zobrazit procvičování" else "Zobrazit řešení"
+            val solutionButton = button(initialLabel) { }
+            solutionButton.setOnClickListener {
+                visible = !visible
+                solutionText.visibility = if (visible) View.VISIBLE else View.GONE
+                solutionButton.text = if (visible) "Skrýt" else initialLabel
+            }
+            card.addView(solutionButton, margin(0, 10, 0, 0))
+            card.addView(solutionText, margin(0, 6, 0, 0))
+        }
+        val questions = item.optJSONObject("quiz")?.optJSONArray("questions")
+        if (questions != null && questions.length() > 0) {
+            card.addView(button("Spustit procvičování →") { startQuiz(item) }, margin(0, 8, 0, 0))
+        }
+        return card
+    }
+
+    private fun startQuiz(item: JSONObject) {
+        val questions = item.optJSONObject("quiz")?.optJSONArray("questions") ?: return
+        var index = 0
+        var score = 0
+        fun showQuestion() {
+            if (index >= questions.length()) {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Výsledek procvičování")
+                    .setMessage("$score / ${questions.length()}")
+                    .setPositiveButton("Hotovo", null)
+                    .setNeutralButton("Zkusit znovu") { _, _ -> index = 0; score = 0; showQuestion() }
+                    .show()
+                return
+            }
+            val question = questions.optJSONObject(index)
+            if (question == null) { index++; showQuestion(); return }
+            val kind = question.optString("type").let { if (it == "binary") "choice" else it }
+            val prompt = if (kind == "punctuation") question.optString("sentence") else question.optString("prompt").ifBlank { "Otázka" }
+            if (kind == "choice") {
+                val options = question.optJSONArray("options") ?: JSONArray()
+                val values = Array(options.length()) { options.optString(it) }
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("${item.optString("name")} · ${index + 1}/${questions.length()}")
+                    .setMessage(prompt)
+                    .setSingleChoiceItems(values, -1) { dialog, selected ->
+                        if (selected == question.optInt("answer", -1)) score++
+                        index++; dialog.dismiss(); showQuestion()
+                    }
+                    .setNegativeButton("Přeskočit") { _, _ -> index++; showQuestion() }
+                    .show()
+            } else {
+                val field = EditText(this).apply {
+                    hint = "Napiš odpověď…"
+                    inputType = InputType.TYPE_CLASS_TEXT
+                    if (kind == "punctuation") setText(question.optString("sentence"))
+                }
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("${item.optString("name")} · ${index + 1}/${questions.length()}")
+                    .setMessage(prompt)
+                    .setView(field)
+                    .setNegativeButton("Přeskočit") { _, _ -> index++; showQuestion() }
+                    .setPositiveButton("Vyhodnotit") { _, _ ->
+                        val answers = question.optJSONArray("answers") ?: JSONArray().put(question.optString("answer"))
+                        val input = field.text.toString().trim()
+                        val accepted = (0 until answers.length()).any { answerIndex ->
+                            fun normalized(value: String): String {
+                                var result = value.trim()
+                                if (question.optBoolean("ignoreCase", false)) result = result.lowercase(Locale.ROOT)
+                                if (kind == "punctuation") result = result.replace(Regex("\\s+"), " ").replace(Regex("\\s*,\\s*"), ",")
+                                return result
+                            }
+                            normalized(input) == normalized(answers.optString(answerIndex))
+                        }
+                        if (accepted) score++
+                        index++; showQuestion()
+                    }
+                    .show()
+            }
+        }
+        showQuestion()
+    }
+
+    private fun itemType(item: JSONObject): String {
+        val explicit = item.optString("type")
+        if (explicit in setOf("task", "test", "event")) return explicit
+        val text = "${item.optString("name")} ${item.optString("task")}".lowercase(Locale.ROOT)
+        return when {
+            Regex("\\b(test|písem|zkoušen|prověrk)").containsMatchIn(text) -> "test"
+            Regex("\\b(akce|výlet|exkur|vysvědčen|divad|koncert)").containsMatchIn(text) -> "event"
+            else -> "task"
+        }
+    }
+
+    private fun formattedText(value: String): CharSequence {
+        val pattern = Regex("""\[([^\]]+)]\((https?://[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`""")
+        val output = SpannableStringBuilder()
+        var cursor = 0
+        for (match in pattern.findAll(value)) {
+            output.append(value.substring(cursor, match.range.first))
+            val start = output.length
+            val linkLabel = match.groups[1]?.value
+            val replacement = linkLabel ?: match.groups[3]?.value ?: match.groups[4]?.value ?: match.groups[5]?.value.orEmpty()
+            output.append(replacement)
+            val end = output.length
+            when {
+                linkLabel != null -> output.setSpan(URLSpan(match.groups[2]!!.value), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                match.groups[3] != null -> output.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                match.groups[4] != null -> output.setSpan(StyleSpan(Typeface.ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                match.groups[5] != null -> output.setSpan(TypefaceSpan("monospace"), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            cursor = match.range.last + 1
+        }
+        output.append(value.substring(cursor))
+        return output
+    }
+
+    private fun itemKey(item: JSONObject): String = listOf("type", "name", "date", "task")
+        .joinToString("\u001f") { field -> if (field == "type") itemType(item) else item.optString(field) }
+
+    private fun doneItems(): MutableSet<String> = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE)
+        .getStringSet(DONE_ITEMS_KEY, emptySet())?.toMutableSet() ?: mutableSetOf()
+
     private fun addItem() {
+        if (!maintainerMode) return toast("Pro přidávání se nejdřív propoj s GitHubem tlačítkem 🔧.")
         val db = database ?: return toast("Nejdřív otevři databázi.")
         val name = titleInput?.text?.toString()?.trim().orEmpty()
         if (name.isBlank()) {
@@ -299,9 +630,11 @@ class MainActivity : Activity() {
         solutionInput?.text?.clear()
         quizPromptInput?.text?.clear()
         quizAnswersInput?.text?.clear()
-        statusView?.text = "Přidáno · ${db.getJSONArray("tasks").length()} položek celkem. Teď můžeš pushnout na origin."
+        statusView?.text = "Přidáno · ukládám do zařízení…"
         exportButton?.visibility = View.VISIBLE
         pushButton?.visibility = View.VISIBLE
+        renderDatabase()
+        persistLocalDatabase()
         titleInput?.requestFocus()
         toast("Položka přidána")
     }
@@ -318,7 +651,7 @@ class MainActivity : Activity() {
 
     private fun pushToOrigin() {
         if (database == null || password == null) return toast("Nejdřív otevři a odemkni databázi.")
-        if (database.toString() == originalDatabase) return toast("Zatím nejsou žádné nové položky.")
+        if (!isDatabaseDirty()) return toast("Zatím nejsou žádné nové položky.")
         runGithubTask(freezeForm = true) { token ->
             val path = "repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH"
             val current = JSONObject(githubRequest(path, token = token))
@@ -330,7 +663,7 @@ class MainActivity : Activity() {
             val remoteEnvelope = JSONObject(String(content, StandardCharsets.UTF_8))
             val remotePlain = decrypt(remoteEnvelope, password ?: error("Databáze je zamčená."))
             val remoteDatabase = JSONObject(String(remotePlain, StandardCharsets.UTF_8))
-            if (remoteDatabase.toString() != originalDatabase) {
+            if (databaseHash(remoteDatabase) != originalDatabaseHash) {
                 throw IOException("Databáze na origin se od načtení změnila. Načti nejnovější data a zkus znovu.")
             }
             sourceEnvelope = remoteEnvelope
@@ -343,9 +676,12 @@ class MainActivity : Activity() {
                 .put("branch", GITHUB_BRANCH)
             githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json", "PUT", token, payload.toString())
             sourceEnvelope = updatedEnvelope
-            originalDatabase = database.toString()
+            originalDatabaseHash = databaseHash(database!!)
+            getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, originalDatabaseHash).apply()
+            saveLocalDatabase(updatedEnvelope.toString(2) + "\n")
             runOnUiThread {
                 statusView?.text = "Push hotov · $commitMessage"
+                addButton?.isEnabled = true
                 toast("Databáze byla odeslána na origin.")
             }
         }
@@ -400,6 +736,7 @@ class MainActivity : Activity() {
     private fun executeGithubTask(credentials: GitHubCredentials, freezeForm: Boolean, task: (String) -> Unit) {
         updateButton?.isEnabled = false
         pushButton?.isEnabled = false
+        maintainerButton?.isEnabled = false
         if (freezeForm) setFormEnabled(false)
         statusView?.text = "Připojuji se k GitHubu…"
         networkWorker.execute {
@@ -407,7 +744,7 @@ class MainActivity : Activity() {
                 val active = validCredentials(credentials)
                 task(active.accessToken)
             } catch (e: Exception) {
-                if (e.message?.contains("HTTP 401") == true || e.message?.contains("HTTP 403") == true) clearGithubToken()
+                if (e.message?.contains("HTTP 401") == true) clearGithubToken()
                 runOnUiThread {
                     statusView?.text = e.message ?: "Požadavek na GitHub se nezdařil."
                     toast(e.message ?: "Požadavek na GitHub se nezdařil.")
@@ -416,6 +753,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     updateButton?.isEnabled = true
                     pushButton?.isEnabled = true
+                    maintainerButton?.isEnabled = true
                     if (freezeForm) setFormEnabled(true)
                 }
             }
@@ -425,6 +763,7 @@ class MainActivity : Activity() {
     private fun startDeviceLogin(clientId: String, freezeForm: Boolean, task: (String) -> Unit) {
         updateButton?.isEnabled = false
         pushButton?.isEnabled = false
+        maintainerButton?.isEnabled = false
         if (freezeForm) setFormEnabled(false)
         statusView?.text = "Připravuji přihlášení přes GitHub…"
         networkWorker.execute {
@@ -483,6 +822,7 @@ class MainActivity : Activity() {
                                 toast(statusView?.text.toString())
                                 updateButton?.isEnabled = true
                                 pushButton?.isEnabled = true
+                                maintainerButton?.isEnabled = true
                                 if (freezeForm) setFormEnabled(true)
                             }
                         }
@@ -494,6 +834,7 @@ class MainActivity : Activity() {
                     toast(statusView?.text.toString())
                     updateButton?.isEnabled = true
                     pushButton?.isEnabled = true
+                    maintainerButton?.isEnabled = true
                     if (freezeForm) setFormEnabled(true)
                 }
             }
@@ -559,9 +900,37 @@ class MainActivity : Activity() {
             if (view is ViewGroup) for (index in 0 until view.childCount) visit(view.getChildAt(index))
         }
         form?.let { visit(it) }
-        sourceButton?.isEnabled = enabled
         originButton?.isEnabled = enabled
         exportButton?.isEnabled = enabled
+        addButton?.isEnabled = enabled
+        maintainerButton?.isEnabled = enabled
+    }
+
+    private fun persistLocalDatabase() {
+        val data = database?.let { JSONObject(it.toString()) } ?: return
+        val source = sourceEnvelope?.let { JSONObject(it.toString()) } ?: return
+        val pass = password?.clone() ?: return
+        addButton?.isEnabled = false
+        worker.execute {
+            try {
+                val raw = encryptedOutput(data, pass, source)
+                saveLocalDatabase(raw)
+                val updatedSource = JSONObject(raw)
+                runOnUiThread {
+                    sourceEnvelope = updatedSource
+                    statusView?.text = "Uloženo v zařízení · ${data.getJSONArray("tasks").length()} položek. Připraveno k pushnutí."
+                    addButton?.isEnabled = true
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusView?.text = "Položka zůstala v paměti, ale lokální uložení selhalo."
+                    addButton?.isEnabled = true
+                    toast(e.message ?: "Lokální uložení se nezdařilo.")
+                }
+            } finally {
+                pass.fill('\u0000')
+            }
+        }
     }
 
     private fun tokenKey(): SecretKey {
@@ -607,6 +976,14 @@ class MainActivity : Activity() {
 
     private fun clearGithubToken() {
         getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit().clear().apply()
+        maintainerMode = false
+        runOnUiThread {
+            maintainerButton?.text = "🔧"
+            maintainerButton?.contentDescription = "Propojit maintainer účet s GitHubem"
+            form?.visibility = View.GONE
+            exportButton?.visibility = View.GONE
+            pushButton?.visibility = View.GONE
+        }
     }
 
     private fun checkForUpdate(silent: Boolean) {
@@ -615,7 +992,7 @@ class MainActivity : Activity() {
             networkWorker.execute {
                 try { checkLatestRelease(validCredentials(saved).accessToken, showResult = !silent) }
                 catch (e: Exception) {
-                    if (e.message?.contains("HTTP 401") == true || e.message?.contains("HTTP 403") == true) clearGithubToken()
+                    if (e.message?.contains("HTTP 401") == true) clearGithubToken()
                     runOnUiThread {
                         statusView?.text = e.message ?: "Kontrola aktualizací se nezdařila."
                         if (!silent) toast(statusView?.text.toString())
@@ -757,6 +1134,10 @@ class MainActivity : Activity() {
         val source = sourceEnvelope ?: error("Chybí původní obálka.")
         val pass = password ?: error("Databáze je zamčená.")
         val data = database ?: error("Databáze není načtená.")
+        return encryptedOutput(data, pass, source)
+    }
+
+    private fun encryptedOutput(data: JSONObject, pass: CharArray, source: JSONObject): String {
         val sortedItems = (0 until data.getJSONArray("tasks").length())
             .map { data.getJSONArray("tasks").getJSONObject(it) }
             .sortedBy { parseDatabaseDate(it.optString("date"))?.time ?: Long.MAX_VALUE }
@@ -905,6 +1286,10 @@ class MainActivity : Activity() {
         private const val RELEASE_APK_NAME = "inzenyri-android.apk"
         private const val TOKEN_PREFS = "github_credentials"
         private const val TOKEN_KEY_ALIAS = "inzenyri_github_token"
+        private const val DB_PREFS = "database_state"
+        private const val ITEM_PREFS = "item_state"
+        private const val DB_BASELINE_HASH = "baseline_sha256"
+        private const val DONE_ITEMS_KEY = "done_items"
         private fun b64(value: ByteArray) = Base64.getEncoder().encodeToString(value)
         private fun unb64(value: String) = Base64.getDecoder().decode(value)
         private fun today() = SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(Date())

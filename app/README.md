@@ -1,6 +1,8 @@
 # Android aplikace Inženýři
 
-Otevři v aplikaci aktuální `data.enc.json`, odemkni ho stejným heslem jako web a přidej úkol, akci nebo test. Tlačítko **Pushnout DB na origin** zapíše šifrovaný soubor do `salamek67/Inzenyri`, větev `main`, pomocí GitHub Contents API. Vytvořený commit má zprávu `Update DB (dbver)`. Před zápisem aplikace zkontroluje, jestli se databáze na GitHubu mezitím nezměnila.
+Při prvním spuštění aplikace vytvoří soukromou složku ve svém interním úložišti a stáhne do ní pouze šifrovaný `data.enc.json`. Po zadání stejného hesla jako na webu zobrazí přehled testů, úkolů a akcí. Databáze zůstává šifrovaná i v zařízení. Tlačítko **Pull databázi z origin** stáhne novou kopii; neuložené změny před přepsáním potvrdíš.
+
+Ikona klíče vpravo nahoře spustí propojení s GitHubem. Po přihlášení se zpřístupní formulář pro přidávání položek a tlačítko **Pushnout DB na origin**. Push zapíše šifrovaný soubor do `salamek67/Inzenyri`, větev `main`, pomocí GitHub Contents API. Vytvořený commit má zprávu `Update DB (dbver)`. Před zápisem aplikace zkontroluje, jestli se databáze na GitHubu mezitím nezměnila. GitHub účet musí mít pro repozitář právo zápisu.
 
 Při prvním načtení nebo pushi se aplikace přihlásí přes GitHub Device Flow. Uživatel potvrdí jednorázový kód na GitHubu; přístupový a obnovovací token aplikace ukládá šifrovaně pomocí Android Keystore. Tokeny jsou omezené oprávněními GitHub App a oprávněními přihlášeného uživatele.
 
