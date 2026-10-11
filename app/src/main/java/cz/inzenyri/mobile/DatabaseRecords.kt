@@ -20,8 +20,11 @@ internal object DatabaseRecords {
         }
     }
 
-    fun key(item: JSONObject): String = listOf("type", "name", "date", "task")
+    fun legacyKey(item: JSONObject): String = listOf("type", "name", "date", "task")
         .joinToString("\u001f") { field -> if (field == "type") type(item) else item.optString(field) }
+
+    fun key(item: JSONObject): String = item.optString("id").takeIf { it.isNotBlank() }
+        ?.let { "id:$it" } ?: legacyKey(item)
 
     fun parseDate(value: String): Date? {
         for (pattern in listOf("dd.MM.yyyy", "dd.MM.yy", "yyyy-MM-dd")) {

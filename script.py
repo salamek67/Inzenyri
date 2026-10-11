@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import copy
-import base64, getpass, hashlib, json, os, shlex, subprocess, sys, tempfile
+import base64, getpass, hashlib, json, os, shlex, subprocess, sys, tempfile, uuid
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -178,7 +178,17 @@ def normalize(value):
         or not all(isinstance(x, dict) for x in value["tasks"])
     ):
         raise DataError("Data musí být JSON objekt s polem objektů 'tasks'.")
+    seen_ids = set()
     for item in value["tasks"]:
+        item_id = item.get("id")
+        if not isinstance(item_id, str) or not item_id.strip() or item_id.strip() in seen_ids:
+            item_id = str(uuid.uuid4())
+            while item_id in seen_ids:
+                item_id = str(uuid.uuid4())
+        else:
+            item_id = item_id.strip()
+        item["id"] = item_id
+        seen_ids.add(item_id)
         quiz = item.get("quiz")
         if not isinstance(quiz, dict):
             continue
@@ -428,7 +438,9 @@ def new_password():
 def initialize_private():
     global SESSION_PASSWORD
     SESSION_PASSWORD = new_password()
-    atomic_write(ENC, envelope(normalize(read(PRIVATE)), SESSION_PASSWORD))
+    data = normalize(read(PRIVATE))
+    atomic_write(PRIVATE, data)
+    atomic_write(ENC, envelope(data, SESSION_PASSWORD))
     save_password(SESSION_PASSWORD)
     success("Vytvořen data.enc.json a lokálně uloženo heslo.")
 
@@ -441,6 +453,7 @@ def encrypt_private():
     if ENC.exists():
         decrypt(read(ENC), password)
     data = normalize(read(PRIVATE))
+    atomic_write(PRIVATE, data)
     atomic_write(ENC, envelope(data, password))
     SESSION_PASSWORD = password
     success("Data byla zašifrována uloženým heslem.")
@@ -664,6 +677,7 @@ def add(type_argument=None):
     else:
         solution = ""
     item = {
+        "id": str(uuid.uuid4()),
         "type": kind,
         "name": name,
         "date": when,
@@ -1178,7 +1192,7 @@ def commit(message=None):
             f"{app_entries}\n\n"
             f"**Full Changelog**: {compare_url}"
         )
-        bumped_versions.append(f"Android {android_bump}")
+        bumped_versions.append(android_bump)
     if bumped_versions:
         version_summary = " / ".join(bumped_versions)
         message = f"{prefix_text}{version_summary}: {summary}"

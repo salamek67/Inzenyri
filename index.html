@@ -235,6 +235,103 @@
         --accent: var(--green);
         --tint: var(--green-soft);
       }
+      .calendar {
+        --accent: var(--violet);
+        --tint: var(--violet-soft);
+      }
+      .calendar-head {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        margin-bottom: 18px;
+      }
+      .calendar-month {
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 750;
+        text-transform: capitalize;
+      }
+      .calendar-nav { display: flex; gap: 6px; }
+      .calendar-nav button {
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        color: var(--text);
+        background: var(--solid);
+      }
+      .calendar-weekdays,
+      .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 6px;
+      }
+      .calendar-weekdays {
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 0.72rem;
+        font-weight: 750;
+        text-align: center;
+      }
+      .calendar-weekdays span { padding: 6px 0; }
+      .calendar-day {
+        display: flex;
+        min-width: 0;
+        min-height: 58px;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        color: var(--text);
+        background: var(--solid);
+      }
+      .calendar-day:disabled { visibility: hidden; }
+      .calendar-day.is-selected {
+        border-color: var(--violet);
+        color: #fff;
+        background: var(--violet);
+      }
+      .calendar-day.is-today:not(.is-selected) { border-color: var(--violet); }
+      .calendar-dots { display: flex; height: 5px; gap: 3px; }
+      .calendar-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--violet);
+      }
+      .calendar-dot.test { background: var(--coral); }
+      .calendar-dot.event { background: var(--blue); }
+      .calendar-agenda {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      .calendar-agenda h3 { margin: 0 0 10px; font-size: 0.95rem; }
+      .calendar-agenda-list { display: grid; gap: 8px; }
+      .calendar-entry {
+        display: grid;
+        grid-template-columns: 8px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 14px;
+        background: var(--solid);
+      }
+      .calendar-entry.is-done { opacity: 0.58; }
+      .calendar-entry-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--violet);
+      }
+      .calendar-entry[data-type="test"] .calendar-entry-dot { background: var(--coral); }
+      .calendar-entry[data-type="event"] .calendar-entry-dot { background: var(--blue); }
+      .calendar-entry-name { font-weight: 750; }
+      .calendar-entry-type { color: var(--muted); font-size: 0.75rem; }
+      .calendar-empty { margin: 0; color: var(--muted); font-size: 0.88rem; }
       .category-head {
         display: flex;
         align-items: center;
@@ -905,6 +1002,22 @@
         </div>
       </header>
       <section class="overview" aria-label="Přehled povinností">
+        <section class="category calendar" aria-label="Kalendář nadcházejících položek">
+          <header class="calendar-head">
+            <span class="category-icon" aria-hidden="true">▦</span>
+            <h2>Kalendář</h2>
+            <span id="calendarMonth" class="calendar-month"></span>
+            <div class="calendar-nav">
+              <button id="calendarPrevious" type="button" aria-label="Předchozí měsíc">‹</button>
+              <button id="calendarNext" type="button" aria-label="Další měsíc">›</button>
+            </div>
+          </header>
+          <div class="calendar-weekdays" aria-hidden="true">
+            <span>Po</span><span>Út</span><span>St</span><span>Čt</span><span>Pá</span><span>So</span><span>Ne</span>
+          </div>
+          <div id="calendarGrid" class="calendar-grid"></div>
+          <div id="calendarAgenda" class="calendar-agenda" aria-live="polite"></div>
+        </section>
         <section class="category tests">
           <header class="category-head">
             <span class="category-icon">✎</span>

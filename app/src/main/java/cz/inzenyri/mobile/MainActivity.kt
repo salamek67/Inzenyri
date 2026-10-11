@@ -88,6 +88,16 @@ class MainActivity : Activity() {
     private var updateButton: Button? = null
     private var pendingApk: File? = null
     private var updateAsset: JSONObject? = null
+    private var updateVersion: String? = null
+    private var updateProgressDialog: Dialog? = null
+    private var updateProgressStatus: TextView? = null
+    private var updateProgressSpinner: ProgressBar? = null
+    private var updateProgressRows = mutableListOf<TextView>()
+    private var updateProgressTitles = mutableListOf<String>()
+    private var updateProgressCloseButton: Button? = null
+    private var updateProgressHeaderCloseButton: Button? = null
+    private var updateInstallerLaunched = false
+    private var pendingUpdateVersionCode = -1
     private var maintainerButton: Button? = null
     private var maintainerItemsContainer: LinearLayout? = null
     private var editingItemIndex: Int? = null
@@ -100,6 +110,12 @@ class MainActivity : Activity() {
     private var dashboardStatusView: TextView? = null
     private var inMaintainerWorkspace = false
     private var itemsContainer: LinearLayout? = null
+    private var calendarContainer: LinearLayout? = null
+    private var dashboardCalendarMonth = Calendar.getInstance().apply {
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }
+    private var dashboardSelectedDay = Calendar.getInstance()
     private var workspaceDir: File? = null
     private var databaseFile: File? = null
     private var maintainerMode = false
@@ -131,6 +147,21 @@ class MainActivity : Activity() {
         render()
         openStoredDatabaseOrClone()
         checkForUpdate(silent = true)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (updateInstallerLaunched) {
+            updateInstallerLaunched = false
+            val installedVersion = packageManager.getPackageInfo(packageName, 0).versionCode
+            if (installedVersion >= pendingUpdateVersionCode) {
+                setUpdateProgressStep(4, "SUCCESS")
+                finishUpdateProgress("Aktualizace byla nainstalována.")
+            } else {
+                failUpdateProgress(4, "Instalace nebyla dokončena.")
+            }
+            pendingUpdateVersionCode = -1
+        }
     }
 
     @Deprecated("Routes Back to the previous screen while a quiz is open")
@@ -236,7 +267,12 @@ class MainActivity : Activity() {
             return
         }
         if (requestCode == 103) {
-            if (android.os.Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()) installDownloadedApk()
+            if (android.os.Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()) {
+                setUpdateProgressStep(3, "SUCCESS")
+                installDownloadedApk()
+            } else {
+                failUpdateProgress(3, "Aplikace nemá povolení požádat o instalaci APK.")
+            }
             return
         }
         if (resultCode != RESULT_OK || data?.data == null) return
@@ -328,6 +364,12 @@ class MainActivity : Activity() {
         page.addView(topBar)
         page.addView(label("Přehled", 30, ink, true), margin(0, 4, 0, 4))
         page.addView(label("Testy, úkoly a akce na jednom místě.", 15, muted, false), margin(0, 0, 0, 16))
+        calendarContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = rounded(if (darkMode) Color.rgb(29, 29, 44) else Color.WHITE, 22)
+        }
+        page.addView(calendarContainer, margin(0, 0, 0, 14))
         searchInput = EditText(this).apply {
             hint = "Hledat testy, úkoly a akce"
             textSize = 15f
@@ -960,8 +1002,15 @@ class MainActivity : Activity() {
             val date = entry.third
             date == null || !date.before(today)
         }
-        val doneKeys = doneItems().apply { retainAll(allEntries.map { itemKey(it.first) }.toSet()) }
+        val doneKeys = doneItems()
+        allEntries.forEach { (item, _, _) ->
+            val legacyKey = DatabaseRecords.legacyKey(item)
+            val stableKey = itemKey(item)
+            if (stableKey != legacyKey && doneKeys.remove(legacyKey)) doneKeys.add(stableKey)
+        }
+        doneKeys.retainAll(allEntries.map { itemKey(it.first) }.toSet())
         getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, doneKeys).apply()
+        renderCalendar(activeEntries)
         val query = searchInput?.text?.toString()?.trim()?.lowercase(Locale.ROOT).orEmpty()
         val visibleEntries = activeEntries.filter { (item, _, _) ->
             val done = itemKey(item) in doneKeys
@@ -993,6 +1042,125 @@ class MainActivity : Activity() {
             container.addView(label(emptyMessage, 15, muted, false), margin(0, 8, 0, 16))
         }
         if (inMaintainerWorkspace) renderMaintainerItems()
+    }
+
+    private fun renderCalendar(entries: List<Triple<JSONObject, Int, Date?>>) {
+        val container = calendarContainer ?: return
+        container.removeAllViews()
+        val czechLocale = Locale("cs", "CZ")
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        heading.addView(label("▦  Kalendář", 18, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val monthName = SimpleDateFormat("LLLL yyyy", czechLocale).format(dashboardCalendarMonth.time)
+            .replaceFirstChar { it.titlecase(czechLocale) }
+        val monthLabel = label(monthName, 14, muted, true).apply { gravity = Gravity.CENTER }
+        heading.addView(monthLabel, LinearLayout.LayoutParams(0, -2, 1.2f))
+        heading.addView(button("‹") {
+            dashboardCalendarMonth.add(Calendar.MONTH, -1)
+            dashboardSelectedDay.time = dashboardCalendarMonth.time
+            renderCalendar(entries)
+        }.apply {
+            minWidth = dp(38); minHeight = dp(38); setPadding(0, 0, 0, 0)
+            setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.rgb(246, 245, 250), 12)
+        }, LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(5) })
+        heading.addView(button("›") {
+            dashboardCalendarMonth.add(Calendar.MONTH, 1)
+            dashboardSelectedDay.time = dashboardCalendarMonth.time
+            renderCalendar(entries)
+        }.apply {
+            minWidth = dp(38); minHeight = dp(38); setPadding(0, 0, 0, 0)
+            setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.rgb(246, 245, 250), 12)
+        }, LinearLayout.LayoutParams(dp(38), dp(38)))
+        container.addView(heading)
+
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val weekdays = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf("Po", "Út", "St", "Čt", "Pá", "So", "Ne").forEach { day ->
+            weekdays.addView(label(day, 11, muted, true).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(0, dp(30), 1f))
+        }
+        grid.addView(weekdays)
+        val first = (dashboardCalendarMonth.get(Calendar.DAY_OF_WEEK) - Calendar.MONDAY + 7) % 7
+        val monthDays = dashboardCalendarMonth.getActualMaximum(Calendar.DAY_OF_MONTH)
+        val weekCount = (first + monthDays + 6) / 7
+        val selectedKey = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(dashboardSelectedDay.time)
+        val todayKey = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(Date())
+        for (week in 0 until weekCount) {
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            for (weekday in 0..6) {
+                val dayNumber = week * 7 + weekday - first + 1
+                val cell = if (dayNumber in 1..monthDays) {
+                    val date = Calendar.getInstance().apply {
+                        set(dashboardCalendarMonth.get(Calendar.YEAR), dashboardCalendarMonth.get(Calendar.MONTH), dayNumber)
+                        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                    }.time
+                    val dayKey = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(date)
+                    val dayItems = entries.filter { it.third?.let { due ->
+                        SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(due) == dayKey
+                    } == true }
+                    LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        setPadding(dp(2), dp(3), dp(2), dp(2))
+                        val selected = dayKey == selectedKey
+                        setBackgroundColor(Color.TRANSPARENT)
+                        background = rounded(when {
+                            selected -> purple
+                            dayKey == todayKey && darkMode -> Color.rgb(55, 49, 77)
+                            dayKey == todayKey -> Color.rgb(241, 237, 255)
+                            darkMode -> Color.rgb(38, 38, 55)
+                            else -> Color.rgb(248, 248, 251)
+                        }, 12)
+                        contentDescription = "$dayNumber. ${dayItems.size} položek"
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener {
+                            dashboardSelectedDay.time = date
+                            renderCalendar(entries)
+                        }
+                        addView(label(dayNumber.toString(), 13, if (selected) Color.WHITE else ink, selected),
+                            LinearLayout.LayoutParams(-1, 0, 1f))
+                        addView(label(if (dayItems.isEmpty()) " " else "•", 11,
+                            if (selected) Color.WHITE else dayItems.firstOrNull()?.let { accentForType(itemType(it.first)) } ?: muted, true))
+                    }
+                } else View(this)
+                row.addView(cell, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
+                })
+            }
+            grid.addView(row)
+        }
+        container.addView(grid, margin(0, 6, 0, 0))
+
+        val selectedDateKey = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(dashboardSelectedDay.time)
+        val selectedDateLabel = SimpleDateFormat("EEEE d. MMMM", czechLocale).format(dashboardSelectedDay.time)
+            .replaceFirstChar { it.titlecase(czechLocale) }
+        container.addView(label(selectedDateLabel, 14, ink, true), margin(0, 14, 0, 4))
+        val selectedEntries = entries.filter { it.third?.let { due ->
+            SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(due) == selectedDateKey
+        } == true }
+        if (selectedEntries.isEmpty()) {
+            container.addView(label("Na tento den zatím nic není.", 13, muted, false), margin(0, 3, 0, 0))
+        } else {
+            selectedEntries.forEach { (item, index, _) ->
+                container.addView(itemCard(item, index), margin(0, 7, 0, 0))
+            }
+        }
+        val undatedEntries = entries.filter { it.third == null }
+        if (undatedEntries.isNotEmpty()) {
+            container.addView(label("Bez data", 14, ink, true), margin(0, 14, 0, 4))
+            undatedEntries.forEach { (item, index, _) ->
+                container.addView(itemCard(item, index), margin(0, 7, 0, 0))
+            }
+        }
+    }
+
+    private fun accentForType(type: String): Int = when (type) {
+        "test" -> Color.rgb(236, 108, 104)
+        "event" -> Color.rgb(60, 130, 246)
+        else -> purple
     }
 
     private fun renderMaintainerItems() {
@@ -1454,6 +1622,7 @@ class MainActivity : Activity() {
         }
         val parsedDate = parseDate(dateValue) ?: return toast("Vyber platné datum.")
         val item = JSONObject()
+            .put("id", java.util.UUID.randomUUID().toString())
             .put("type", selectedType)
             .put("name", name)
             .put("date", SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(parsedDate))
@@ -1496,6 +1665,7 @@ class MainActivity : Activity() {
         }
         val parsedDate = parseDate(dateValue) ?: return toast("Vyber platné datum.")
         val updated = JSONObject(original.toString())
+            .put("id", original.optString("id").takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString())
             .put("type", selectedType)
             .put("name", name)
             .put("date", SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(parsedDate))
@@ -1968,6 +2138,8 @@ class MainActivity : Activity() {
     private fun clearGithubToken() {
         credentialStore.clearGithubCredentials()
         maintainerMode = false
+        getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).edit()
+            .putBoolean("maintainer_mode", false).apply()
         runOnUiThread {
             maintainerButton?.text = "🔧"
             maintainerButton?.contentDescription = "Propojit maintainer účet s GitHubem"
@@ -1979,43 +2151,57 @@ class MainActivity : Activity() {
 
     private fun checkForUpdate(silent: Boolean) {
         updateAsset = null
+        updateVersion = null
         updateButton?.text = "Zkontrolovat aktualizace aplikace"
         if (!silent) updateButton?.isEnabled = false
+        if (!silent) {
+            showUpdateProgress(downloadFlow = false)
+            setUpdateProgressStep(0, "RUNNING")
+        }
         networkWorker.execute {
             try {
-                checkLatestRelease(null, showResult = !silent)
+                val available = fetchLatestUpdate()
+                if (available != null) {
+                    updateAsset = available.second
+                    updateVersion = available.first
+                }
+                runOnUiThread {
+                    updateButton?.isEnabled = true
+                    if (available == null) {
+                        updateButton?.text = "Zkontrolovat aktualizace aplikace"
+                        statusView?.text = "Aplikace je aktuální · ${BuildConfig.VERSION_NAME}"
+                        if (!silent) {
+                            setUpdateProgressStep(0, "SUCCESS")
+                            finishUpdateProgress("Používáš aktuální verzi.")
+                        }
+                    } else {
+                        updateButton?.text = "Stáhnout aktualizaci ${available.first}"
+                        statusView?.text = "Je dostupná verze ${available.first}."
+                        if (!silent) {
+                            setUpdateProgressStep(0, "SUCCESS")
+                            finishUpdateProgress("Je dostupná verze ${available.first}.")
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 runOnUiThread {
-                    statusView?.text = e.message ?: "Kontrola aktualizací se nezdařila."
-                    if (!silent) toast(statusView?.text.toString())
                     updateButton?.isEnabled = true
+                    statusView?.text = e.message ?: "Kontrola aktualizací se nezdařila."
+                    if (!silent) failUpdateProgress(0, e.message ?: "Kontrola aktualizací se nezdařila.")
                 }
             }
         }
     }
 
-    private fun checkLatestRelease(token: String?, showResult: Boolean) {
-        val release = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest", token = token))
+    private fun fetchLatestUpdate(): Pair<String, JSONObject>? {
+        val release = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"))
+        val tag = release.optString("tag_name").removePrefix("v")
+        val current = packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+        if (compareVersions(tag, current) <= 0) return null
         val asset = release.optJSONArray("assets")?.let { assets ->
             (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name") == RELEASE_APK_NAME }
         } ?: throw IOException("Nejnovější release neobsahuje $RELEASE_APK_NAME.")
-        val tag = release.optString("tag_name").removePrefix("v")
-        val current = packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
-        if (compareVersions(tag, current) > 0) {
-            updateAsset = asset
-            runOnUiThread {
-                updateButton?.text = "Stáhnout aktualizaci $tag"
-                statusView?.text = "Je dostupná verze $tag."
-                if (showResult) toast("Je dostupná nová verze $tag.")
-                updateButton?.isEnabled = true
-            }
-        } else {
-            runOnUiThread {
-                statusView?.text = "Aplikace je aktuální · $current"
-                if (showResult) toast("Používáš aktuální verzi.")
-                updateButton?.isEnabled = true
-            }
-        }
+        return tag to asset
     }
 
     private fun compareVersions(first: String, second: String): Int {
@@ -2029,27 +2215,78 @@ class MainActivity : Activity() {
     }
 
     private fun downloadUpdate() {
-        val asset = updateAsset ?: return checkForUpdate(silent = false)
         val saved = readGithubCredentials()
         updateButton?.isEnabled = false
         statusView?.text = "Stahuji aktualizaci…"
+        showUpdateProgress(downloadFlow = true)
+        setUpdateProgressStep(0, "RUNNING")
         networkWorker.execute {
+            var activeStep = 0
             try {
                 val token = saved?.let { validCredentials(it).accessToken }
+                val available = fetchLatestUpdate()
+                if (available == null) {
+                    updateAsset = null
+                    updateVersion = null
+                    runOnUiThread {
+                        updateButton?.text = "Zkontrolovat aktualizace aplikace"
+                        statusView?.text = "Aplikace je aktuální · ${BuildConfig.VERSION_NAME}"
+                        setUpdateProgressStep(0, "SUCCESS")
+                        for (index in 1 until updateProgressRows.size) setUpdateProgressStep(index, "SKIPPED")
+                        finishUpdateProgress("Používáš aktuální verzi.")
+                    }
+                    return@execute
+                }
+                val version = available.first
+                val asset = available.second
+                updateAsset = asset
+                updateVersion = version
+                runOnUiThread {
+                    updateProgressTitles.getOrNull(1)?.let { updateProgressTitles[1] = "Stahuji verzi $version" }
+                    updateButton?.text = "Stahuji aktualizaci $version…"
+                    setUpdateProgressStep(0, "SUCCESS")
+                    setUpdateProgressStep(1, "RUNNING")
+                    statusView?.text = "Stahuji aktualizaci $version…"
+                }
+                activeStep = 1
                 val file = downloadReleaseAsset(asset, token)
+                runOnUiThread { setUpdateProgressStep(1, "SUCCESS") }
+                activeStep = 2
+                runOnUiThread {
+                    setUpdateProgressStep(2, "RUNNING")
+                    statusView?.text = "Ověřuji staženou aplikaci…"
+                }
                 val info = packageManager.getPackageArchiveInfo(file.absolutePath, 0) ?: error("Stažený soubor není platný APK.")
                 require(info.packageName == packageName) { "APK nepatří této aplikaci." }
                 val installedVersion = packageManager.getPackageInfo(packageName, 0).versionCode
                 require(info.versionCode > installedVersion) { "Release neobsahuje novější verzi." }
                 pendingApk = file
+                pendingUpdateVersionCode = info.versionCode
+                activeStep = 3
                 runOnUiThread {
-                    statusView?.text = "Aktualizace stažena. Android požádá o potvrzení instalace."
-                    if (android.os.Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-                        startActivityForResult(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")), 103)
-                    } else installDownloadedApk()
+                    setUpdateProgressStep(2, "SUCCESS")
+                    setUpdateProgressStep(3, "RUNNING")
+                    statusView?.text = "Žádám Android o povolení instalace…"
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+                            startActivityForResult(
+                                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")),
+                                103
+                            )
+                        } else {
+                            setUpdateProgressStep(3, "SUCCESS")
+                            installDownloadedApk()
+                        }
+                    } catch (e: Exception) {
+                        failUpdateProgress(3, e.message ?: "Žádost o instalaci se nepodařila.")
+                    }
                 }
             } catch (e: Exception) {
-                runOnUiThread { statusView?.text = e.message ?: "Stažení aktualizace se nezdařilo."; toast(statusView?.text.toString()) }
+                runOnUiThread {
+                    statusView?.text = e.message ?: "Stažení aktualizace se nezdařilo."
+                    updateButton?.text = updateVersion?.let { "Stáhnout aktualizaci $it" } ?: "Zkontrolovat aktualizace aplikace"
+                    failUpdateProgress(activeStep, e.message ?: "Stažení aktualizace se nezdařilo.")
+                }
             } finally {
                 runOnUiThread { updateButton?.isEnabled = true }
             }
@@ -2101,12 +2338,126 @@ class MainActivity : Activity() {
 
     private fun installDownloadedApk() {
         val file = pendingApk ?: return
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            setUpdateProgressStep(4, "RUNNING")
+            statusView?.text = "Čekám na potvrzení instalace od Androidu…"
+            updateInstallerLaunched = true
+            startActivity(intent)
+        } catch (e: Exception) {
+            updateInstallerLaunched = false
+            failUpdateProgress(4, e.message ?: "Instalační okno Androidu se nepodařilo otevřít.")
         }
-        startActivity(intent)
+    }
+
+    private fun showUpdateProgress(downloadFlow: Boolean) {
+        updateProgressDialog?.dismiss()
+        updateProgressTitles = if (downloadFlow) mutableListOf(
+            "Kontroluji nejnovější verzi",
+            "Stahuji APK",
+            "Ověřuji staženou aplikaci",
+            "Žádám Android o povolení instalace",
+            "Čekám na potvrzení instalace"
+        ) else mutableListOf("Kontroluji nejnovější verzi")
+        updateProgressRows = mutableListOf()
+        val dialog = Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(18), dp(22), dp(20))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(label("Aktualizace aplikace", 21, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        updateProgressSpinner = ProgressBar(this).apply { isIndeterminate = true }
+        header.addView(updateProgressSpinner, LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(10) })
+        updateProgressHeaderCloseButton = button("✕") { dialog.dismiss() }.apply {
+            minWidth = dp(40); minHeight = dp(40); setPadding(0, 0, 0, 0)
+            setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 13)
+            isEnabled = false
+            alpha = 0.5f
+        }
+        header.addView(updateProgressHeaderCloseButton, LinearLayout.LayoutParams(dp(40), dp(40)))
+        content.addView(header)
+        updateProgressStatus = label("Připravuji kontrolu…", 14, muted, false)
+        content.addView(updateProgressStatus, margin(0, 8, 0, 12))
+        updateProgressTitles.forEach { title ->
+            val row = label("○  $title", 14, muted, false)
+            updateProgressRows += row
+            content.addView(row, margin(0, 5, 0, 5))
+        }
+        updateProgressCloseButton = button("Zavřít") { dialog.dismiss() }.apply { visibility = View.GONE }
+        content.addView(updateProgressCloseButton, margin(0, 16, 0, 0))
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setCancelable(false)
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setOnDismissListener {
+            if (updateProgressDialog === dialog) clearUpdateProgress()
+        }
+        updateProgressDialog = dialog
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun setUpdateProgressStep(index: Int, state: String) {
+        runOnUiThread {
+            val row = updateProgressRows.getOrNull(index) ?: return@runOnUiThread
+            val color = when (state) {
+                "RUNNING" -> purple
+                "SUCCESS" -> Color.rgb(35, 135, 75)
+                "FAILED" -> Color.rgb(190, 45, 55)
+                else -> muted
+            }
+            val icon = when (state) {
+                "RUNNING" -> "●"
+                "SUCCESS" -> "✓"
+                "FAILED" -> "✕"
+                "SKIPPED" -> "–"
+                else -> "○"
+            }
+            row.text = "$icon  ${updateProgressTitles.getOrElse(index) { "" }}"
+            row.setTextColor(color)
+            if (state == "RUNNING") updateProgressStatus?.text = updateProgressTitles.getOrElse(index) { "" }
+        }
+    }
+
+    private fun finishUpdateProgress(message: String) {
+        runOnUiThread {
+            updateProgressSpinner?.visibility = View.GONE
+            updateProgressStatus?.text = message
+            updateProgressCloseButton?.visibility = View.VISIBLE
+            updateProgressHeaderCloseButton?.isEnabled = true
+            updateProgressHeaderCloseButton?.alpha = 1f
+        }
+    }
+
+    private fun failUpdateProgress(index: Int, message: String) {
+        runOnUiThread {
+            if (index >= 0) setUpdateProgressStep(index, "FAILED")
+            updateProgressSpinner?.visibility = View.GONE
+            updateProgressStatus?.text = message
+            updateProgressCloseButton?.visibility = View.VISIBLE
+            updateProgressHeaderCloseButton?.isEnabled = true
+            updateProgressHeaderCloseButton?.alpha = 1f
+        }
+    }
+
+    private fun clearUpdateProgress() {
+        updateProgressDialog = null
+        updateProgressStatus = null
+        updateProgressSpinner = null
+        updateProgressRows.clear()
+        updateProgressTitles.clear()
+        updateProgressCloseButton = null
+        updateProgressHeaderCloseButton = null
     }
 
     private fun encryptedOutput(): String {

@@ -1,5 +1,5 @@
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.4.4";
+const PAGE_VERSION = "2.5.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -16,6 +16,12 @@ const CAROUSEL_LISTS = [
 
 let unlockedData = null;
 const doneItems = new Set();
+let visibleCalendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let selectedCalendarDay = localDateKey(new Date());
+
+function localDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 function decodeBase64(value) {
   if (typeof value !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(value))
@@ -90,9 +96,15 @@ async function decryptEnvelope(envelope, password) {
 }
 
 function parseDate(value) {
-  const [day, month, year] = String(value ?? "")
-    .split(".")
-    .map(Number);
+  const raw = String(value ?? "").trim();
+  let day, month, year;
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw),
+    czech = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/.exec(raw);
+  if (iso) [, year, month, day] = iso.map(Number);
+  else if (czech) {
+    [, day, month, year] = czech.map(Number);
+    if (year < 100) year += year < 70 ? 2000 : 1900;
+  } else return null;
   const parsed = new Date(year, month - 1, day);
   if (
     !day ||
@@ -130,7 +142,7 @@ function stableItemHash(value) {
   return `${(second >>> 0).toString(36)}${(first >>> 0).toString(36)}`;
 }
 
-function itemKey(item) {
+function legacyItemKey(item) {
   const identity = JSON.stringify([
     itemType(item),
     String(item.name ?? ""),
@@ -138,6 +150,11 @@ function itemKey(item) {
     String(item.task ?? ""),
   ]);
   return `v1:${stableItemHash(identity)}`;
+}
+
+function itemKey(item) {
+  const id = typeof item.id === "string" ? item.id.trim() : "";
+  return id ? `id:${id}` : legacyItemKey(item);
 }
 
 function saveDoneItems() {
@@ -149,14 +166,21 @@ function saveDoneItems() {
 }
 
 function restoreDoneItems(tasks) {
-  const validKeys = new Set(tasks.map((item, index) => itemKey(item, index)));
+  const validKeys = new Set(),
+    legacyToStableKey = new Map();
+  for (const item of tasks) {
+    const key = itemKey(item);
+    validKeys.add(key);
+    if (key !== legacyItemKey(item)) legacyToStableKey.set(legacyItemKey(item), key);
+  }
   let saved = [];
   try {
     const parsed = JSON.parse(localStorage.getItem(DONE_STORAGE_KEY) || "[]");
     if (Array.isArray(parsed))
-      saved = parsed.filter(
-        (key) => typeof key === "string" && validKeys.has(key),
-      );
+      saved = parsed
+        .filter((key) => typeof key === "string")
+        .map((key) => legacyToStableKey.get(key) || key)
+        .filter((key) => validKeys.has(key));
   } catch {
     saved = [];
   }
@@ -477,6 +501,7 @@ function render() {
       (a, b) =>
         (a.date ?? Infinity) - (b.date ?? Infinity) || a.index - b.index,
     );
+  renderCalendar(active);
   for (const [type, [listId, countId]] of Object.entries(CATEGORIES)) {
     const list = document.getElementById(listId),
       section = list.closest(".category"),
@@ -514,6 +539,144 @@ function render() {
   for (const entry of completed)
     completedList.append(createItem(entry.item, entry.index));
   completedList.refreshCarousel?.();
+}
+
+function renderCalendar(active) {
+  const grid = document.getElementById("calendarGrid"),
+    agenda = document.getElementById("calendarAgenda"),
+    monthLabel = document.getElementById("calendarMonth");
+  if (!grid || !agenda || !monthLabel) return;
+  const year = visibleCalendarMonth.getFullYear(),
+    month = visibleCalendarMonth.getMonth(),
+    firstDay = new Date(year, month, 1),
+    daysInMonth = new Date(year, month + 1, 0).getDate(),
+    offset = (firstDay.getDay() + 6) % 7,
+    todayKey = localDateKey(new Date());
+  monthLabel.textContent = firstDay.toLocaleDateString("cs-CZ", {
+    month: "long",
+    year: "numeric",
+  });
+  grid.replaceChildren();
+  const cellCount = Math.ceil((offset + daysInMonth) / 7) * 7;
+  for (let index = 0; index < cellCount; index++) {
+    const dayNumber = index - offset + 1,
+      button = document.createElement("button");
+    button.type = "button";
+    button.className = "calendar-day";
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      button.disabled = true;
+      button.setAttribute("aria-hidden", "true");
+      grid.append(button);
+      continue;
+    }
+    const date = new Date(year, month, dayNumber),
+      key = localDateKey(date),
+      entries = active.filter(({ date: due }) => due && localDateKey(due) === key),
+      dots = document.createElement("span");
+    button.classList.toggle("is-selected", key === selectedCalendarDay);
+    button.classList.toggle("is-today", key === todayKey);
+    button.setAttribute(
+      "aria-label",
+      `${date.toLocaleDateString("cs-CZ", { day: "numeric", month: "long" })}, ${entries.length} položek`,
+    );
+    button.append(document.createTextNode(String(dayNumber)));
+    dots.className = "calendar-dots";
+    [...new Set(entries.map(({ item }) => itemType(item)))].slice(0, 3).forEach((type) => {
+      const dot = document.createElement("span");
+      dot.className = `calendar-dot ${type}`;
+      dots.append(dot);
+    });
+    button.append(dots);
+    button.addEventListener("click", () => {
+      selectedCalendarDay = key;
+      renderCalendar(active);
+    });
+    grid.append(button);
+  }
+
+  agenda.replaceChildren();
+  const selectedDate = new Date(`${selectedCalendarDay}T00:00:00`),
+    title = document.createElement("h3"),
+    list = document.createElement("div");
+  title.textContent = selectedDate.toLocaleDateString("cs-CZ", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  list.className = "calendar-agenda-list";
+  const selectedEntries = active.filter(
+    ({ date }) => date && localDateKey(date) === selectedCalendarDay,
+  );
+  if (selectedEntries.length) {
+    selectedEntries.forEach(({ item }) => {
+      const key = itemKey(item),
+        row = document.createElement("div"),
+        checkbox = document.createElement("input"),
+        name = document.createElement("span"),
+        type = document.createElement("span"),
+        done = doneItems.has(key);
+      row.className = `calendar-entry${done ? " is-done" : ""}`;
+      row.dataset.type = itemType(item);
+      checkbox.type = "checkbox";
+      checkbox.className = "check";
+      checkbox.checked = done;
+      checkbox.setAttribute("aria-label", `${done ? "Vrátit mezi aktivní" : "Označit jako hotové"}: ${item.name || "Bez názvu"}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) doneItems.add(key);
+        else doneItems.delete(key);
+        saveDoneItems();
+        render();
+      });
+      name.className = "calendar-entry-name";
+      name.textContent = item.name || "Bez názvu";
+      type.className = "calendar-entry-type";
+      type.textContent = { test: "Test", task: "Úkol", event: "Akce" }[itemType(item)];
+      row.append(checkbox, name, type);
+      list.append(row);
+    });
+  } else {
+    const empty = document.createElement("p");
+    empty.className = "calendar-empty";
+    empty.textContent = "Na tento den zatím nic není.";
+    list.append(empty);
+  }
+  agenda.append(title, list);
+
+  const undated = active.filter(({ date }) => !date);
+  if (undated.length) {
+    const undatedTitle = document.createElement("h3"),
+      undatedList = document.createElement("div");
+    undatedTitle.textContent = "Bez data";
+    undatedList.className = "calendar-agenda-list";
+    undated.forEach(({ item }) => {
+      const row = document.createElement("div"),
+        checkbox = document.createElement("input"),
+        name = document.createElement("span"),
+        type = document.createElement("span"),
+        key = itemKey(item),
+        done = doneItems.has(key);
+      row.className = `calendar-entry${done ? " is-done" : ""}`;
+      row.dataset.type = itemType(item);
+      checkbox.type = "checkbox";
+      checkbox.className = "check";
+      checkbox.checked = done;
+      checkbox.setAttribute("aria-label", `${done ? "Vrátit mezi aktivní" : "Označit jako hotové"}: ${item.name || "Bez názvu"}`);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) doneItems.add(key);
+        else doneItems.delete(key);
+        saveDoneItems();
+        render();
+      });
+      name.className = "calendar-entry-name";
+      name.textContent = item.name || "Bez názvu";
+      type.className = "calendar-entry-type";
+      type.textContent = { test: "Test", task: "Úkol", event: "Akce" }[itemType(item)];
+      row.append(checkbox, name, type);
+      undatedList.append(row);
+    });
+    agenda.append(undatedTitle, undatedList);
+  }
 }
 
 function initCarousels() {
@@ -1145,6 +1308,24 @@ function setDarkMode(enabled) {
 darkModeToggle.addEventListener("click", () =>
   setDarkMode(!document.body.classList.contains("dark")),
 );
+document.getElementById("calendarPrevious").addEventListener("click", () => {
+  visibleCalendarMonth = new Date(
+    visibleCalendarMonth.getFullYear(),
+    visibleCalendarMonth.getMonth() - 1,
+    1,
+  );
+  selectedCalendarDay = localDateKey(visibleCalendarMonth);
+  render();
+});
+document.getElementById("calendarNext").addEventListener("click", () => {
+  visibleCalendarMonth = new Date(
+    visibleCalendarMonth.getFullYear(),
+    visibleCalendarMonth.getMonth() + 1,
+    1,
+  );
+  selectedCalendarDay = localDateKey(visibleCalendarMonth);
+  render();
+});
 setDarkMode(localStorage.getItem("darkMode") === "true");
 initCarousels();
 tryPasswordManagerLogin();
