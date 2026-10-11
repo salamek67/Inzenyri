@@ -3,13 +3,7 @@ name: Build Android app
 on:
   push:
     branches: [main]
-    paths:
-      - "app/**"
-      - ".github/workflows/android.yml"
   pull_request:
-    paths:
-      - "app/**"
-      - ".github/workflows/android.yml"
   release:
     types: [published]
   workflow_dispatch:
@@ -18,8 +12,31 @@ permissions:
   contents: read
 
 jobs:
+  commit-policy:
+    runs-on: ubuntu-latest
+    outputs:
+      skip_app: ${{ steps.prefix.outputs.skip_app }}
+      skip_ci: ${{ steps.prefix.outputs.skip_ci }}
+    steps:
+      - name: Checkout commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Read build skip prefix
+        id: prefix
+        shell: bash
+        run: |
+          message="$(git log -1 --format=%s)"
+          case "${message,,}" in
+            '[ci skip]'*) echo "skip_app=true" >> "$GITHUB_OUTPUT"; echo "skip_ci=true" >> "$GITHUB_OUTPUT" ;;
+            '[app skip]'*) echo "skip_app=true" >> "$GITHUB_OUTPUT"; echo "skip_ci=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "skip_app=false" >> "$GITHUB_OUTPUT"; echo "skip_ci=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
   debug:
-    if: github.event_name != 'release'
+    needs: commit-policy
+    if: ${{ github.event_name != 'release' && needs.commit-policy.outputs.skip_app != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -69,7 +86,8 @@ jobs:
           if-no-files-found: error
 
   release-build:
-    if: github.event_name == 'release'
+    needs: commit-policy
+    if: ${{ github.event_name == 'release' && needs.commit-policy.outputs.skip_app != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

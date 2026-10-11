@@ -969,6 +969,41 @@ def offer_android_version_bump():
     return True
 
 
+def commit_build_targets(message):
+    prefix = message.lstrip().lower()
+    if prefix.startswith("[ci skip]"):
+        return False, False
+    if prefix.startswith("[app skip]"):
+        return False, True
+    if prefix.startswith("[page skip]"):
+        return True, False
+    return True, True
+
+
+def infer_commit_prefix(changed_paths):
+    web_files = {
+        "index.html",
+        "app.js",
+        "data.enc.json",
+        ".github/workflows/static.yml",
+    }
+    android_files = {
+        ".github/workflows/android.yml",
+    }
+    builds_web = any(path in web_files for path in changed_paths)
+    builds_android = any(
+        path in android_files or path == "app" or path.startswith("app/")
+        for path in changed_paths
+    )
+    if builds_web and builds_android:
+        return ""
+    if builds_android:
+        return "[page skip] "
+    if builds_web:
+        return "[app skip] "
+    return "[ci skip] "
+
+
 def commit(message=None):
     if not ENC.exists():
         raise DataError("Nejdřív vytvoř data.enc.json příkazem encrypt.")
@@ -1015,11 +1050,22 @@ def commit(message=None):
         ".github/workflows/android.yml",
         "app",
     ]
-    message = message or ask("Zpráva commitu") or "Aktualizace přehledu"
-    if not (touches_web or touches_data or touches_android) and not message.lower().startswith(
-        "[ci skip]"
-    ):
-        message = f"[ci skip] {message}"
+    message = (
+        message
+        or ask("Zpráva commitu")
+        or "Aktualizace přehledu"
+    ).strip()
+    if not message.lower().startswith(("[app skip]", "[page skip]", "[ci skip]")):
+        message = infer_commit_prefix(changed_paths) + message
+    build_web, build_android = commit_build_targets(message)
+    if not build_web and not build_android:
+        print(f"  {muted('CI přeskočeno: web ani Android se nebuildí.')}")
+    elif not build_android:
+        print(f"  {muted('CI přeskočí Android; web se nasadí.')}")
+    elif not build_web:
+        print(f"  {muted('CI přeskočí web; Android se sestaví.')}")
+    else:
+        print(f"  {muted('CI sestaví web i Android.')}")
     subprocess.run(["git", "add", *files], cwd=ROOT, check=True)
     subprocess.run(["git", "commit", "-m", message], cwd=ROOT, check=True)
     subprocess.run(["git", "push", "-u", "origin", "main"], cwd=ROOT, check=True)

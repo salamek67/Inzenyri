@@ -106,10 +106,11 @@ class MainActivity : Activity() {
     private var filterButtons = mutableMapOf<String, Button>()
     private var themeButton: Button? = null
     private var lockButton: Button? = null
-    private var githubLoginDialog: android.app.AlertDialog? = null
+    private var githubLoginDialog: Dialog? = null
     private var githubLoginStatusView: TextView? = null
     private var githubLoginCodeView: TextView? = null
     private var githubLoginOpenButton: Button? = null
+    private var githubLoginCancelButton: Button? = null
     private var githubLoginStepViews = mutableListOf<TextView>()
 
     private val createDocument = registerForActivityResultCompat(102)
@@ -1065,7 +1066,7 @@ class MainActivity : Activity() {
             }
             sourceEnvelope = remoteEnvelope
             val updatedEnvelope = JSONObject(encryptedOutput())
-            val commitMessage = "Update DB (${updatedEnvelope.getString("dbVersion")})"
+            val commitMessage = "[app skip] Update DB (${updatedEnvelope.getString("dbVersion")})"
             val payload = JSONObject()
                 .put("message", commitMessage)
                 .put("content", Base64.getEncoder().encodeToString(updatedEnvelope.toString(2).toByteArray(StandardCharsets.UTF_8) + byteArrayOf(10)))
@@ -1165,20 +1166,37 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showGithubLoginProgress(cancelled: AtomicBoolean): android.app.AlertDialog {
+    private fun showGithubLoginProgress(cancelled: AtomicBoolean): Dialog {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(8), dp(22), dp(8))
+            setPadding(dp(22), dp(18), dp(22), dp(20))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(ProgressBar(this).apply { isIndeterminate = true },
-            LinearLayout.LayoutParams(dp(24), dp(24)).apply { marginEnd = dp(12) })
+        header.addView(label("GitHub · přihlášení", 21, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        val closeButton = button("✕") { githubLoginDialog?.dismiss() }.apply {
+            textSize = 17f
+            minWidth = dp(42)
+            minHeight = dp(42)
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
+            setTextColor(ink)
+        }
+        header.addView(closeButton, LinearLayout.LayoutParams(dp(42), dp(42)))
+        content.addView(header)
+        content.addView(label("Propoj účet s repozitářem", 13, muted, false), margin(0, 5, 0, 18))
+
+        val progressHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        progressHeader.addView(ProgressBar(this).apply { isIndeterminate = true },
+            LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(10) })
         githubLoginStatusView = label("Připravuji přihlášení…", 14, muted, false)
-        header.addView(githubLoginStatusView, LinearLayout.LayoutParams(0, -2, 1f))
-        content.addView(header, margin(0, 0, 0, 14))
+        progressHeader.addView(githubLoginStatusView, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(progressHeader, margin(0, 0, 0, 12))
 
         githubLoginStepViews = mutableListOf()
         listOf(
@@ -1196,6 +1214,8 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             typeface = Typeface.MONOSPACE
         }
+        githubLoginCodeView?.background = rounded(if (darkMode) Color.rgb(37, 37, 55) else Color.WHITE, 16)
+        githubLoginCodeView?.setPadding(dp(12), dp(14), dp(12), dp(14))
         content.addView(githubLoginCodeView, margin(0, 14, 0, 4))
         content.addView(label("Zadej ho pouze na github.com.", 12, muted, false).apply {
             gravity = Gravity.CENTER
@@ -1204,36 +1224,38 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }, margin(0, 14, 0, 0))
 
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("GitHub · přihlášení")
-            .setView(content)
-            .setNegativeButton("Zrušit", null)
-            .setPositiveButton("Otevřít GitHub", null)
-            .create()
-        githubLoginDialog = dialog
-        dialog.setOnShowListener {
-            githubLoginOpenButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).apply {
-                isEnabled = false
-                setOnClickListener {
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))
-                    } catch (e: Exception) {
-                        failGithubLoginDialog(e.message ?: "GitHub se nepodařilo otevřít.")
-                    }
-                }
-            }
-            dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
-                cancelled.set(true)
-                dialog.dismiss()
-                clearGithubLoginDialog()
-            }
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
+        githubLoginCancelButton = button("Zrušit") { cancelled.set(true); githubLoginDialog?.dismiss() }.apply {
+            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 16)
+            setTextColor(ink)
+        }
+        githubLoginOpenButton = button("Otevřít GitHub") {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))
+            } catch (e: Exception) {
+                failGithubLoginDialog(e.message ?: "GitHub se nepodařilo otevřít.")
+            }
+        }.apply { isEnabled = false; alpha = 0.55f }
+        actions.addView(githubLoginCancelButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+        actions.addView(githubLoginOpenButton, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(actions, margin(0, 18, 0, 0))
+
+        val dialog = Dialog(this)
+        githubLoginDialog = dialog
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setCanceledOnTouchOutside(false)
         dialog.setOnCancelListener {
             cancelled.set(true)
             clearGithubLoginDialog()
         }
         dialog.setOnDismissListener { if (githubLoginDialog === dialog) clearGithubLoginDialog() }
         dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
         setGithubLoginStep(0, "RUNNING")
         return dialog
     }
@@ -1279,7 +1301,7 @@ class MainActivity : Activity() {
         githubLoginOpenButton?.text = "Zavřít"
         githubLoginOpenButton?.isEnabled = true
         githubLoginOpenButton?.setOnClickListener { githubLoginDialog?.dismiss() }
-        githubLoginDialog?.getButton(android.app.AlertDialog.BUTTON_NEGATIVE)?.visibility = View.GONE
+        githubLoginCancelButton?.visibility = View.GONE
     }
 
     private fun clearGithubLoginDialog() {
@@ -1287,6 +1309,7 @@ class MainActivity : Activity() {
         githubLoginStatusView = null
         githubLoginCodeView = null
         githubLoginOpenButton = null
+        githubLoginCancelButton = null
         githubLoginStepViews.clear()
     }
 

@@ -1,8 +1,8 @@
 # Android aplikace Inženýři
 
-Při prvním spuštění aplikace vytvoří soukromou složku ve svém interním úložišti a stáhne do ní pouze šifrovaný `data.enc.json`. Po zadání stejného hesla jako na webu zobrazí přehled testů, úkolů a akcí. Databáze zůstává šifrovaná i v zařízení. Tlačítko **Pull databázi z origin** stáhne novou kopii; neuložené změny před přepsáním potvrdíš.
+Při prvním spuštění aplikace vytvoří soukromou složku ve svém interním úložišti a stáhne do ní pouze šifrovaný `data.enc.json`. Po zadání stejného hesla jako na webu zobrazí přehled testů, úkolů a akcí. Databáze zůstává šifrovaná i v zařízení. Nová data z origin načteš tažením přehledu dolů; neuložené změny před přepsáním potvrdíš.
 
-Ikona klíče vpravo nahoře spustí propojení s GitHubem. Po přihlášení se zpřístupní formulář pro přidávání položek a tlačítko **Pushnout DB na origin**. Push zapíše šifrovaný soubor do `salamek67/Inzenyri`, větev `main`, pomocí GitHub Contents API. Vytvořený commit má zprávu `Update DB (dbver)`. Před zápisem aplikace zkontroluje, jestli se databáze na GitHubu mezitím nezměnila. GitHub účet musí mít pro repozitář právo zápisu.
+Ikona klíče vpravo nahoře spustí propojení s GitHubem. Po přihlášení se zpřístupní formulář pro přidávání položek a tlačítko **Pushnout DB na origin**. Push zapíše šifrovaný soubor do `salamek67/Inzenyri`, větev `main`, pomocí GitHub Contents API. Commit má zprávu `[app skip] Update DB (dbver)`, takže se nasadí nový webový obsah bez zbytečného sestavení APK. Před zápisem aplikace zkontroluje, jestli se databáze na GitHubu mezitím nezměnila. GitHub účet musí mít pro repozitář právo zápisu.
 
 Při prvním načtení nebo pushi se aplikace přihlásí přes GitHub Device Flow. Uživatel potvrdí jednorázový kód na GitHubu; přístupový a obnovovací token aplikace ukládá šifrovaně pomocí Android Keystore. Heslo databáze lze uložit po výslovném zaškrtnutí. Je šifrované samostatným klíčem z Android Keystore a při dalším spuštění se předvyplní do dialogu. Tokeny jsou omezené oprávněními GitHub App a oprávněními přihlášeného uživatele.
 
@@ -12,7 +12,7 @@ Vytvoř GitHub App pro tento projekt, povol **Device Flow** a nastav repository 
 
 ## APK a aktualizace
 
-Workflow `.github/workflows/android.yml` sestavuje debug APK jako artefakt při změně aplikace nebo ručním spuštění. Po publikování GitHub Release sestaví podepsané APK `inzenyri-android.apk` a přiloží ho k vydání. Aplikace při spuštění kontroluje nejnovější release; instalaci nové verze vždy potvrzuje uživatel v Androidu.
+Workflowy sestaví Android i web při commitu bez zvláštního prefixu. Prefix `[app skip]` přeskočí Android, `[page skip]` přeskočí nasazení webu a `[ci skip]` přeskočí oboje. `script.py` prefix automaticky odvodí ze změněných souborů, pokud ho ve zprávě commitu neurčíš sám. Android workflow vytváří debug APK artefakt; po publikování GitHub Release sestaví podepsané APK `inzenyri-android.apk` a přiloží ho k vydání. Aplikace při spuštění kontroluje nejnovější release; instalaci nové verze vždy potvrzuje uživatel v Androidu.
 
 Podepsané vydání vyžaduje tyto GitHub Actions secrets:
 

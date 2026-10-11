@@ -22,8 +22,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  commit-policy:
+    runs-on: ubuntu-latest
+    outputs:
+      skip_page: ${{ steps.prefix.outputs.skip_page }}
+      skip_ci: ${{ steps.prefix.outputs.skip_ci }}
+    steps:
+      - name: Checkout commit
+        if: github.event_name != 'push'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Read build skip prefix
+        id: prefix
+        shell: bash
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if [ -z "$COMMIT_MESSAGE" ]; then
+            COMMIT_MESSAGE="$(git log -1 --format=%s 2>/dev/null || true)"
+          fi
+          case "${COMMIT_MESSAGE,,}" in
+            '[ci skip]'*) echo "skip_page=true" >> "$GITHUB_OUTPUT"; echo "skip_ci=true" >> "$GITHUB_OUTPUT" ;;
+            '[page skip]'*) echo "skip_page=true" >> "$GITHUB_OUTPUT"; echo "skip_ci=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "skip_page=false" >> "$GITHUB_OUTPUT"; echo "skip_ci=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
   # Single deploy job since we're just deploying
   deploy:
+    needs: commit-policy
+    if: ${{ needs.commit-policy.outputs.skip_page != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
