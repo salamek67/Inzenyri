@@ -46,11 +46,21 @@ jobs:
         env:
           GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID }}
         run: gradle assembleDebug -PgithubAppClientId="$GH_APP_CLIENT_ID"
+      - name: Prepare debug APK artifact
+        working-directory: app
+        run: |
+          apk_path="$(find . -type f -path '*/outputs/apk/debug/*.apk' -print -quit)"
+          if [ -z "$apk_path" ]; then
+            echo "::error::Gradle completed, but no debug APK was found. APK files under the project:"
+            find . -type f -name '*.apk' -print
+            exit 1
+          fi
+          cp "$apk_path" "$RUNNER_TEMP/inzenyri-android-debug.apk"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: inzenyri-android-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ runner.temp }}/inzenyri-android-debug.apk
           if-no-files-found: error
 
   release-build:
@@ -99,7 +109,13 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           gradle assembleRelease -PappVersionName="$version" -PappVersionCode="$GITHUB_RUN_NUMBER" -PgithubAppClientId="$GH_APP_CLIENT_ID"
-          cp build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/inzenyri-android.apk"
+          apk_path="$(find . -type f -path '*/outputs/apk/release/*.apk' -print -quit)"
+          if [ -z "$apk_path" ]; then
+            echo "::error::Gradle completed, but no release APK was found. APK files under the project:"
+            find . -type f -name '*.apk' -print
+            exit 1
+          fi
+          cp "$apk_path" "$RUNNER_TEMP/inzenyri-android.apk"
       - name: Upload signed APK artifact
         uses: actions/upload-artifact@v4
         with:
