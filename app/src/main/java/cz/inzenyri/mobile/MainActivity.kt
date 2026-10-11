@@ -57,6 +57,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
+import javax.crypto.AEADBadTagException
 import javax.crypto.KeyGenerator
 import javax.crypto.Mac
 import javax.crypto.SecretKey
@@ -173,6 +174,10 @@ class MainActivity : Activity() {
                 val verification = JSONObject(String(decrypt(JSONObject(raw), pass), StandardCharsets.UTF_8))
                 require(verification.optJSONArray("tasks") != null) { "Ověření zašifrované databáze selhalo." }
                 saveLocalDatabase(raw)
+                val persistedRaw = databaseFile?.readText(StandardCharsets.UTF_8)
+                    ?: error("Uloženou databázi se nepodařilo znovu načíst.")
+                val persistedData = JSONObject(String(decrypt(JSONObject(persistedRaw), pass), StandardCharsets.UTF_8))
+                require(persistedData.optJSONArray("tasks") != null) { "Uložený soubor databáze je poškozený." }
                 runOnUiThread {
                     password?.fill('\u0000')
                     password = null
@@ -180,7 +185,7 @@ class MainActivity : Activity() {
                     sourceEnvelope = null
                     originalDatabaseHash = null
                     render()
-                    askPassword(raw, preserveBaseline = true)
+                    askPassword(persistedRaw, preserveBaseline = true)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -646,10 +651,14 @@ class MainActivity : Activity() {
                         statusView?.text = "Odemčeno · ${parsed.getJSONArray("tasks").length()} položek · DB $dbVersion"
                         renderDatabase()
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     candidate.fill('\u0000')
                     runOnUiThread {
-                        statusView?.text = "Heslo nesouhlasí nebo je soubor poškozený. Zkontroluj ho a zkus to znovu."
+                        statusView?.text = if (e is AEADBadTagException) {
+                            "Heslo nesouhlasí. Zkontroluj ho a zkus to znovu."
+                        } else {
+                            "Lokální databáze je poškozená: ${e.message ?: "neplatný obsah"}"
+                        }
                         unlockButton.isEnabled = true
                     }
                 }
