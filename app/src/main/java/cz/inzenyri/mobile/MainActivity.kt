@@ -1355,9 +1355,12 @@ class MainActivity : Activity() {
         private const val RELEASE_APK_NAME = "inzenyri-android.apk"
         private const val TOKEN_PREFS = "github_credentials"
         private const val TOKEN_KEY_ALIAS = "inzenyri_github_token"
+        private const val DATABASE_PASSWORD_KEY_ALIAS = "inzenyri_database_password"
         private const val DB_PREFS = "database_state"
         private const val ITEM_PREFS = "item_state"
         private const val DB_BASELINE_HASH = "baseline_sha256"
+        private const val SAVED_PASSWORD_IV = "database_password_iv"
+        private const val SAVED_PASSWORD_VALUE = "database_password_value"
         private const val DONE_ITEMS_KEY = "done_items"
         private fun b64(value: ByteArray) = Base64.getEncoder().encodeToString(value)
         private fun unb64(value: String) = Base64.getDecoder().decode(value)
