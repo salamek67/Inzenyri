@@ -1038,7 +1038,7 @@ def offer_android_version_bump():
     return current, new_version
 
 
-def record_changelog_release(section, version, fallback):
+def consume_changelog_category(section):
     try:
         changelog = CHANGELOG.read_text(encoding="utf-8")
     except OSError as exc:
@@ -1050,35 +1050,10 @@ def record_changelog_release(section, version, fallback):
     if not match:
         raise DataError(f"V CHANGELOG.md chybí část {section}.")
     body = match.group(2)
-    first_version = re.search(r"(?m)^### ", body)
-    pending_end = first_version.start() if first_version else len(body)
-    entries = body[:pending_end].strip()
-    if not entries:
-        entries = f"- {fallback.strip()}"
-    previous_versions = body[pending_end:].strip()
-    updated_body = f"\n### {version}\n{entries}\n"
-    if previous_versions:
-        updated_body += f"\n{previous_versions}\n"
-    else:
-        updated_body += "\n"
-    updated = changelog[: match.start(2)] + updated_body + changelog[match.end(2) :]
-    atomic_write_text(CHANGELOG, updated.rstrip() + "\n")
-    return entries
-
-
-def clear_changelog_category(section):
-    try:
-        changelog = CHANGELOG.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise DataError("Soubor CHANGELOG.md nelze načíst.") from exc
-    section_pattern = re.compile(
-        rf"(?ms)^(## {re.escape(section)})\n(.*?)(?=^## |\Z)"
-    )
-    match = section_pattern.search(changelog)
-    if not match:
-        raise DataError(f"V CHANGELOG.md chybí část {section}.")
+    entries = body.strip()
     updated = changelog[: match.start(2)] + "\n" + changelog[match.end(2) :]
     atomic_write_text(CHANGELOG, updated.rstrip() + "\n")
+    return entries
 
 
 def github_release_exists(tag):
@@ -1187,13 +1162,14 @@ def commit(message=None):
     summary = message[len(prefix_text) :].strip()
     bumped_versions = []
     if web_bump:
-        record_changelog_release("Web", web_bump, summary)
         bumped_versions.append(f"Web {web_bump}")
     android_release_notes = None
     if android_bump:
         if not build_android:
             raise DataError("Bump Android verze vyžaduje sestavení aplikace. Odstraň prefix [app skip] nebo [ci skip].")
-        app_entries = record_changelog_release("Android", android_bump, summary)
+        app_entries = consume_changelog_category("Android")
+        if not app_entries:
+            app_entries = f"- {summary}"
         compare_url = (
             "https://github.com/salamek67/Inzenyri/compare/"
             f"{android_previous_version}...{android_bump}"
@@ -1227,22 +1203,8 @@ def commit(message=None):
             ],
             check=True,
         )
-    categories_to_clear = []
-    if web_bump:
-        categories_to_clear.append("Web")
     if android_bump:
-        categories_to_clear.append("Android")
-    for section in categories_to_clear:
-        clear_changelog_category(section)
-    if categories_to_clear:
-        subprocess.run(["git", "add", "CHANGELOG.md"], cwd=ROOT, check=True)
-        cleanup_message = (
-            "[ci skip] Vyčištění changelogu po bumpu: "
-            + ", ".join(categories_to_clear)
-        )
-        subprocess.run(["git", "commit", "-m", cleanup_message], cwd=ROOT, check=True)
-        subprocess.run(["git", "push", "-u", "origin", "main"], cwd=ROOT, check=True)
-        success("Changelog publikované kategorie vyčištěn.")
+        success("Poznámky releasu byly použity a changelog vyčištěn ve stejném commitu.")
 
 
 def help_text():

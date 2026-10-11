@@ -1,7 +1,5 @@
 # Changelog
 
-Nové položky přidávej přímo pod odpovídající část. Verze webu a Androidu při bumpu spravuje `script.py`.
-
-## Web
+Nové položky přidávej pod Android. Při bumpu aplikace je skript vloží do GitHub Release a odstraní je z tohoto souboru ve stejném commitu.
 
 ## Android
