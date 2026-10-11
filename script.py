@@ -12,6 +12,9 @@ PRIVATE = ROOT / "data.private.json"
 PASSWORD_FILE = ROOT / ".inzenyri-password"
 APP = ROOT / "app.js"
 ANDROID_GRADLE = ROOT / "app" / "build.gradle.kts"
+CHANGELOG = ROOT / "CHANGELOG.md"
+GH_CONFIG_DIR = Path.home() / ".config" / "gh-inzenyri"
+GITHUB_REPOSITORY = "salamek67/Inzenyri"
 FORMAT = "inzenyri-encrypted-data"
 VERSION = 1
 ITERATIONS = 600_000
@@ -32,6 +35,24 @@ COMMANDS = (
     "quit",
 )
 SESSION_PASSWORD = None
+
+
+def github_cli_environment():
+    environment = os.environ.copy()
+    environment["GH_CONFIG_DIR"] = str(GH_CONFIG_DIR)
+    environment["GH_REPO"] = GITHUB_REPOSITORY
+    environment.pop("GH_TOKEN", None)
+    environment.pop("GITHUB_TOKEN", None)
+    return environment
+
+
+def github_cli(arguments, **kwargs):
+    return subprocess.run(
+        ["gh", *arguments],
+        cwd=ROOT,
+        env=github_cli_environment(),
+        **kwargs,
+    )
 
 
 class DataError(Exception):
@@ -892,7 +913,7 @@ def offer_web_version_bump():
     source, match, version = web_version()
     current = ".".join(map(str, version))
     if ask(f"Zvýšit verzi webu {current}? [a/n]").lower() not in {"a", "ano"}:
-        return False
+        return None
 
     level = {
         "1": 0,
@@ -920,7 +941,7 @@ def offer_web_version_bump():
     )
     atomic_write_text(APP, updated)
     success(f"Verze webu zvýšena: {current} → {new_version}.")
-    return True
+    return new_version
 
 
 def android_version():
@@ -942,7 +963,22 @@ def offer_android_version_bump():
     source, match, version = android_version()
     current = ".".join(map(str, version))
     if ask(f"Zvýšit verzi Android aplikace {current}? [a/n]").lower() not in {"a", "ano"}:
-        return False
+        return None
+
+    try:
+        auth = github_cli(["auth", "status"], capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        raise DataError(
+            "Pro Android release nainstaluj GitHub CLI (gh) a přihlas vyhrazený účet příkazem:\n"
+            f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
+        ) from exc
+    if auth.returncode:
+        detail = (auth.stderr or auth.stdout).strip()
+        raise DataError(
+            "Přihlas účet pro releasy příkazem:\n"
+            f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
+            + (f"\n{detail}" if detail else "")
+        )
 
     level = {
         "1": 0,
@@ -963,10 +999,46 @@ def offer_android_version_bump():
     for index in range(level + 1, 3):
         bumped[index] = 0
     new_version = ".".join(map(str, bumped))
+    release_tag = new_version
+    if github_release_exists(release_tag):
+        raise DataError(f"GitHub Release {release_tag} už existuje.")
     updated = source[: match.start(2)] + new_version + source[match.end(4) :]
     atomic_write_text(ANDROID_GRADLE, updated)
     success(f"Verze Android aplikace zvýšena: {current} → {new_version}.")
-    return True
+    return current, new_version
+
+
+def record_changelog_release(section, version, fallback):
+    try:
+        changelog = CHANGELOG.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise DataError("Soubor CHANGELOG.md nelze načíst.") from exc
+    section_pattern = re.compile(
+        rf"(?ms)^(## {re.escape(section)})\n(.*?)(?=^## |\Z)"
+    )
+    match = section_pattern.search(changelog)
+    if not match:
+        raise DataError(f"V CHANGELOG.md chybí část {section}.")
+    body = match.group(2)
+    first_version = re.search(r"(?m)^### ", body)
+    pending_end = first_version.start() if first_version else len(body)
+    entries = body[:pending_end].strip()
+    if not entries:
+        entries = f"- {fallback.strip()}"
+    previous_versions = body[pending_end:].strip()
+    updated_body = f"\n### {version}\n{entries}\n"
+    if previous_versions:
+        updated_body += f"\n{previous_versions}\n"
+    else:
+        updated_body += "\n"
+    updated = changelog[: match.start(2)] + updated_body + changelog[match.end(2) :]
+    atomic_write_text(CHANGELOG, updated.rstrip() + "\n")
+    return entries
+
+
+def github_release_exists(tag):
+    result = github_cli(["release", "view", tag], capture_output=True, text=True)
+    return result.returncode == 0
 
 
 def commit_build_targets(message):
@@ -1029,10 +1101,15 @@ def commit(message=None):
     )
     touches_android = touches_android_app or ".github/workflows/android.yml" in changed_paths
     touches_data = "data.enc.json" in changed_paths
+    web_bump = None
+    android_bump = None
+    android_previous_version = None
     if touches_web:
-        offer_web_version_bump()
+        web_bump = offer_web_version_bump()
     if touches_android_app:
-        offer_android_version_bump()
+        android_bump_result = offer_android_version_bump()
+        if android_bump_result:
+            android_previous_version, android_bump = android_bump_result
     data, password = open_data()
     if touches_data:
         save(data, password, next_db_version())
@@ -1046,6 +1123,8 @@ def commit(message=None):
         "script.py",
         "requirements.txt",
         ".gitignore",
+        "AGENTS.md",
+        "CHANGELOG.md",
         ".github/workflows/static.yml",
         ".github/workflows/android.yml",
         "app",
@@ -1058,6 +1137,30 @@ def commit(message=None):
     if not message.lower().startswith(("[app skip]", "[page skip]", "[ci skip]")):
         message = infer_commit_prefix(changed_paths) + message
     build_web, build_android = commit_build_targets(message)
+    skip_prefix = re.match(r"(?i)^\[(?:app|page|ci) skip\]\s*", message)
+    prefix_text = skip_prefix.group(0) if skip_prefix else ""
+    summary = message[len(prefix_text) :].strip()
+    bumped_versions = []
+    if web_bump:
+        record_changelog_release("Web", web_bump, summary)
+        bumped_versions.append(f"Web {web_bump}")
+    android_release_notes = None
+    if android_bump:
+        if not build_android:
+            raise DataError("Bump Android verze vyžaduje sestavení aplikace. Odstraň prefix [app skip] nebo [ci skip].")
+        app_entries = record_changelog_release("Android", android_bump, summary)
+        compare_url = (
+            "https://github.com/salamek67/Inzenyri/compare/"
+            f"{android_previous_version}...{android_bump}"
+        )
+        android_release_notes = (
+            f"Android {android_bump}\n\n{app_entries}\n\n"
+            f"**Full Changelog**: {compare_url}"
+        )
+        bumped_versions.append(f"Android {android_bump}")
+    if bumped_versions:
+        version_summary = " / ".join(bumped_versions)
+        message = f"{prefix_text}{version_summary}: {summary}"
     if not build_web and not build_android:
         print(f"  {muted('CI přeskočeno: web ani Android se nebuildí.')}")
     elif not build_android:
@@ -1069,6 +1172,16 @@ def commit(message=None):
     subprocess.run(["git", "add", *files], cwd=ROOT, check=True)
     subprocess.run(["git", "commit", "-m", message], cwd=ROOT, check=True)
     subprocess.run(["git", "push", "-u", "origin", "main"], cwd=ROOT, check=True)
+    if android_bump:
+        github_cli(
+            [
+                "release", "create", android_bump,
+                "--title", f"Inženýři Android {android_bump}",
+                "--notes", android_release_notes,
+                "--target", "main",
+            ],
+            check=True,
+        )
 
 
 def help_text():
@@ -1177,7 +1290,7 @@ def interactive_menu():
             except DataError as exc:
                 cli_error(exc)
             except subprocess.CalledProcessError as exc:
-                cli_error(f"Git skončil chybou ({exc.returncode}).")
+                cli_error(f"Příkaz skončil chybou ({exc.returncode}).")
         except ValueError as exc:
             cli_error(f"Neplatný příkaz: {exc}")
         except KeyboardInterrupt:
@@ -1201,7 +1314,7 @@ if __name__ == "__main__":
         raise SystemExit(1)
     except subprocess.CalledProcessError as exc:
         print(
-            f"\n  {style('✕','31')} Git skončil chybou ({exc.returncode}).",
+            f"\n  {style('✕','31')} Příkaz skončil chybou ({exc.returncode}).",
             file=sys.stderr,
         )
         raise SystemExit(exc.returncode)
