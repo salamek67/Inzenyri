@@ -11,6 +11,7 @@ ENC = ROOT / "data.enc.json"
 PRIVATE = ROOT / "data.private.json"
 PASSWORD_FILE = ROOT / ".inzenyri-password"
 APP = ROOT / "app.js"
+ANDROID_GRADLE = ROOT / "app" / "build.gradle.kts"
 FORMAT = "inzenyri-encrypted-data"
 VERSION = 1
 ITERATIONS = 600_000
@@ -922,6 +923,52 @@ def offer_web_version_bump():
     return True
 
 
+def android_version():
+    try:
+        source = ANDROID_GRADLE.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise DataError("Soubor app/build.gradle.kts nelze načíst.") from exc
+    pattern = re.compile(
+        r'(?m)^(\s*versionName = providers\.gradleProperty\("appVersionName"\)\.orElse\(")'
+        r'(\d+)\.(\d+)\.(\d+)("\)\.get\(\))$'
+    )
+    match = pattern.search(source)
+    if not match:
+        raise DataError("V app/build.gradle.kts chybí výchozí verze Android aplikace.")
+    return source, match, tuple(map(int, match.groups()[1:4]))
+
+
+def offer_android_version_bump():
+    source, match, version = android_version()
+    current = ".".join(map(str, version))
+    if ask(f"Zvýšit verzi Android aplikace {current}? [a/n]").lower() not in {"a", "ano"}:
+        return False
+
+    level = {
+        "1": 0,
+        "major": 0,
+        "ma": 0,
+        "2": 1,
+        "minor": 1,
+        "mi": 1,
+        "3": 2,
+        "patch": 2,
+        "p": 2,
+    }.get(ask("Index [1] major / [2] minor / [3] patch").lower())
+    if level is None:
+        raise DataError("Neplatný index verze. Použij 1, 2 nebo 3.")
+
+    bumped = list(version)
+    bumped[level] += 1
+    for index in range(level + 1, 3):
+        bumped[index] = 0
+    new_version = ".".join(map(str, bumped))
+    updated = source[: match.start(2)] + new_version + source[match.end(4) :]
+    atomic_write_text(ANDROID_GRADLE, updated)
+    success(f"Verze Android aplikace zvýšena: {current} → {new_version}.")
+    return True
+
+
 def commit(message=None):
     if not ENC.exists():
         raise DataError("Nejdřív vytvoř data.enc.json příkazem encrypt.")
@@ -942,9 +989,15 @@ def commit(message=None):
         path = line[3:].split(" -> ")[-1].strip('"')
         changed_paths.append(path)
     touches_web = any(path in web_files or path == ".github/" for path in changed_paths)
+    touches_android_app = any(
+        path == "app" or path.startswith("app/") for path in changed_paths
+    )
+    touches_android = touches_android_app or ".github/workflows/android.yml" in changed_paths
     touches_data = "data.enc.json" in changed_paths
     if touches_web:
         offer_web_version_bump()
+    if touches_android_app:
+        offer_android_version_bump()
     data, password = open_data()
     if touches_data:
         save(data, password, next_db_version())
@@ -959,9 +1012,11 @@ def commit(message=None):
         "requirements.txt",
         ".gitignore",
         ".github/workflows/static.yml",
+        ".github/workflows/android.yml",
+        "app",
     ]
     message = message or ask("Zpráva commitu") or "Aktualizace přehledu"
-    if not (touches_web or touches_data) and not message.lower().startswith(
+    if not (touches_web or touches_data or touches_android) and not message.lower().startswith(
         "[ci skip]"
     ):
         message = f"[ci skip] {message}"
