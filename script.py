@@ -1090,6 +1090,9 @@ def infer_commit_prefix(changed_paths):
     web_files = {
         "index.html",
         "app.js",
+        "favicon.ico",
+        "favicon.png",
+        "apple-touch-icon.png",
         "data.enc.json",
         ".github/workflows/static.yml",
     }
@@ -1123,6 +1126,9 @@ def commit(message=None):
     web_files = (
         "index.html",
         "app.js",
+        "favicon.ico",
+        "favicon.png",
+        "apple-touch-icon.png",
         ".github/workflows/static.yml",
     )
     changed_paths = []
@@ -1135,11 +1141,10 @@ def commit(message=None):
     )
     touches_android = touches_android_app or ".github/workflows/android.yml" in changed_paths
     touches_data = "data.enc.json" in changed_paths
-    web_bump = None
     android_bump = None
     android_previous_version = None
     if touches_web:
-        web_bump = offer_web_version_bump()
+        offer_web_version_bump()
     if touches_android_app:
         android_bump_result = offer_android_version_bump()
         if android_bump_result:
@@ -1153,6 +1158,9 @@ def commit(message=None):
     files = [
         "index.html",
         "app.js",
+        "favicon.ico",
+        "favicon.png",
+        "apple-touch-icon.png",
         "data.enc.json",
         "script.py",
         "requirements.txt",
@@ -1174,9 +1182,6 @@ def commit(message=None):
     skip_prefix = re.match(r"(?i)^\[(?:app|page|ci) skip\]\s*", message)
     prefix_text = skip_prefix.group(0) if skip_prefix else ""
     summary = message[len(prefix_text) :].strip()
-    bumped_versions = []
-    if web_bump:
-        bumped_versions.append(f"Web {web_bump}")
     android_release_notes = None
     if android_bump:
         if not build_android:
@@ -1192,10 +1197,6 @@ def commit(message=None):
             f"{app_entries}\n\n"
             f"**Full Changelog**: {compare_url}"
         )
-        bumped_versions.append(android_bump)
-    if bumped_versions:
-        version_summary = " / ".join(bumped_versions)
-        message = f"{prefix_text}{version_summary}: {summary}"
     if not build_web and not build_android:
         print(f"  {muted('CI přeskočeno: web ani Android se nebuildí.')}")
     elif not build_android:

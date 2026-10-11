@@ -11,10 +11,8 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
-import android.text.Editable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
-import android.text.TextWatcher
 import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
@@ -29,7 +27,6 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.HorizontalScrollView
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
@@ -74,6 +71,8 @@ class MainActivity : Activity() {
     private var selectedType = "task"
     private var dateValue = today()
     private var statusView: TextView? = null
+    private var footerView: TextView? = null
+    private var reminderButton: Button? = null
     private var form: LinearLayout? = null
     private var typeButtons = mutableMapOf<String, Button>()
     private var titleInput: EditText? = null
@@ -116,12 +115,10 @@ class MainActivity : Activity() {
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }
     private var dashboardSelectedDay = Calendar.getInstance()
+    private var calendarExpanded = true
     private var workspaceDir: File? = null
     private var databaseFile: File? = null
     private var maintainerMode = false
-    private var searchInput: EditText? = null
-    private var selectedFilter = "all"
-    private var filterButtons = mutableMapOf<String, Button>()
     private var themeButton: Button? = null
     private var lockButton: Button? = null
     private var githubLoginDialog: Dialog? = null
@@ -144,6 +141,7 @@ class MainActivity : Activity() {
         databaseFile = File(workspaceDir, "data.enc.json")
         maintainerMode = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).getBoolean("maintainer_mode", false)
         darkMode = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).getBoolean("dark_mode", false)
+        ReminderNotifications.schedule(this)
         render()
         openStoredDatabaseOrClone()
         checkForUpdate(silent = true)
@@ -151,6 +149,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        updateReminderButton()
         if (updateInstallerLaunched) {
             updateInstallerLaunched = false
             val installedVersion = packageManager.getPackageInfo(packageName, 0).versionCode
@@ -175,7 +174,6 @@ class MainActivity : Activity() {
     }
 
     private fun toggleDarkMode() {
-        val oldQuery = searchInput?.text?.toString().orEmpty()
         val draft = listOf(
             titleInput?.text?.toString().orEmpty(),
             descriptionInput?.text?.toString().orEmpty(),
@@ -187,7 +185,6 @@ class MainActivity : Activity() {
         darkMode = !darkMode
         getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putBoolean("dark_mode", darkMode).apply()
         render()
-        searchInput?.setText(oldQuery)
         listOf(titleInput, descriptionInput, solutionInput, quizPromptInput, quizAnswersInput)
             .zip(draft).forEach { (view, text) -> view?.setText(text) }
         selectType(selectedType)
@@ -239,17 +236,6 @@ class MainActivity : Activity() {
             } finally {
                 pass.fill('\u0000')
             }
-        }
-    }
-
-    private fun updateFilterButtons() {
-        filterButtons.forEach { (key, chip) ->
-            val selected = key == selectedFilter
-            chip.background = rounded(
-                if (selected) purple else if (darkMode) Color.rgb(39, 39, 57) else Color.WHITE,
-                22
-            )
-            chip.setTextColor(if (selected) Color.WHITE else ink)
         }
     }
 
@@ -370,37 +356,6 @@ class MainActivity : Activity() {
             background = rounded(if (darkMode) Color.rgb(29, 29, 44) else Color.WHITE, 22)
         }
         page.addView(calendarContainer, margin(0, 0, 0, 14))
-        searchInput = EditText(this).apply {
-            hint = "Hledat testy, úkoly a akce"
-            textSize = 15f
-            setTextColor(ink)
-            setHintTextColor(muted)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            minHeight = dp(52)
-            background = rounded(if (darkMode) Color.rgb(37, 37, 55) else Color.WHITE, 16)
-            addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderDatabase()
-                override fun afterTextChanged(s: Editable?) = Unit
-            })
-        }
-        page.addView(searchInput, margin(0, 0, 0, 10))
-        val filters = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
-        val filterRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        filterButtons.clear()
-        listOf("all" to "Vše", "test" to "Testy", "task" to "Úkoly", "event" to "Akce", "done" to "Hotové")
-            .forEach { (key, title) ->
-                val chip = button(title) {
-                    selectedFilter = key
-                    updateFilterButtons()
-                    renderDatabase()
-                }.apply { minHeight = dp(40); minWidth = 0; setPadding(dp(15), 0, dp(15), 0) }
-                filterButtons[key] = chip
-                filterRow.addView(chip, LinearLayout.LayoutParams(-2, dp(40)).apply { marginEnd = dp(8) })
-            }
-        filters.addView(filterRow)
-        page.addView(filters, margin(0, 0, 0, 10))
-        updateFilterButtons()
         statusView = label("Připravuji lokální data…", 13, muted, false)
         dashboardStatusView = statusView
         page.addView(statusView, margin(0, 0, 0, 12))
@@ -439,9 +394,12 @@ class MainActivity : Activity() {
             addButton = button("Přidat položku") { addItem() }
             addView(addButton, margin(0, 16, 0, 4))
         }
-        page.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
+        val footer = label("", 12, muted, false).apply {
             gravity = Gravity.CENTER
-        }, margin(0, 24, 0, 4))
+        }
+        footerView = footer
+        page.addView(footer, margin(0, 24, 0, 4))
+        updateFooter()
         selectType("task")
     }
 
@@ -584,6 +542,42 @@ class MainActivity : Activity() {
             toggleDarkMode()
         }
         content.addView(themeButton, margin(0, 0, 0, 10))
+        content.addView(label("Oznámení", 17, ink, true), margin(0, 4, 0, 5))
+        content.addView(label(
+            "Pro každý druh položky nastav předstih a čas připomenutí. Vychází z poslední odemčené databáze; Android může doručení posunout.",
+            13, muted, false
+        ), margin(0, 0, 0, 8))
+        reminderButton = button("") {
+            if (ReminderNotifications.enabled(this)) {
+                ReminderNotifications.setEnabled(this, false)
+            } else if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                if (getSharedPreferences("reminders", MODE_PRIVATE).getBoolean("permission_requested", false) &&
+                    !shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS)) {
+                    startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+                    toast("Povol oznámení v Androidu a potom zapni připomínky.")
+                } else {
+                    getSharedPreferences("reminders", MODE_PRIVATE).edit().putBoolean("permission_requested", true).apply()
+                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 104)
+                }
+            } else if (!ReminderNotifications.allowed(this)) {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+                toast("Povol oznámení v Androidu a potom zapni připomínky.")
+            } else {
+                ReminderNotifications.setEnabled(this, true)
+                database?.let { ReminderNotifications.sync(this, it, doneItems()) }
+            }
+            updateReminderButton()
+        }
+        content.addView(reminderButton, margin(0, 0, 0, 16))
+        updateReminderButton()
+        ReminderNotifications.types.forEach { (type, title) ->
+            val timingButton = button(reminderTimingLabel(type, title)) { }
+            timingButton.setOnClickListener {
+                showReminderTiming(type, title) { timingButton.text = reminderTimingLabel(type, title) }
+            }
+            content.addView(timingButton, margin(0, 0, 0, 10))
+        }
         content.addView(label(
             "QR kód obsahuje heslo k databázi. Zobraz ho jen před důvěryhodnou osobou; přístup k údržbě GitHubu tím nesdílíš.",
             14, muted, false
@@ -597,11 +591,93 @@ class MainActivity : Activity() {
         }
         content.addView(updateButton)
         (header.getChildAt(1) as Button).setOnClickListener { dialog.dismiss() }
-        dialog.setContentView(content)
+        dialog.setContentView(ScrollView(this).apply { addView(content) })
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.setCanceledOnTouchOutside(true)
         dialog.show()
         dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun updateReminderButton() {
+        reminderButton?.text = when {
+            !ReminderNotifications.enabled(this) -> "Zapnout připomínky"
+            !ReminderNotifications.allowed(this) -> "Vypnout připomínky · Android je blokuje"
+            else -> "Vypnout připomínky"
+        }
+    }
+
+    private fun reminderTimingLabel(type: String, title: String): String {
+        val value = ReminderNotifications.timing(this, type)
+        val days = when (value.days) {
+            0 -> "V daný den"
+            1 -> "1 den předem"
+            in 2..4 -> "${value.days} dny předem"
+            else -> "${value.days} dní předem"
+        }
+        return "$title · $days · ${String.format(Locale.ROOT, "%02d:%02d", value.hour, value.minute)}"
+    }
+
+    private fun showReminderTiming(type: String, title: String, onSaved: () -> Unit) {
+        val value = ReminderNotifications.timing(this, type)
+        val dialog = Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(18), dp(22), dp(22))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
+        }
+        content.addView(label("$title · oznámení", 21, ink, true))
+        content.addView(label("Kolik dní předem (0 = v daný den)", 14, muted, false), margin(0, 14, 0, 5))
+        val days = input("Dní předem", false).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(value.days.toString())
+        }
+        content.addView(days)
+        content.addView(label("Čas oznámení (24hodinový)", 14, muted, false), margin(0, 14, 0, 5))
+        val timeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val hour = input("Hodina", false).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            contentDescription = "Hodina oznámení"
+            setText(String.format(Locale.ROOT, "%02d", value.hour))
+        }
+        val minute = input("Minuta", false).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            contentDescription = "Minuta oznámení"
+            setText(String.format(Locale.ROOT, "%02d", value.minute))
+        }
+        timeRow.addView(hour, LinearLayout.LayoutParams(0, -2, 1f))
+        timeRow.addView(label(" : ", 20, ink, true))
+        timeRow.addView(minute, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(timeRow)
+        content.addView(button("Uložit") {
+            val d = days.text.toString().toIntOrNull()
+            val h = hour.text.toString().toIntOrNull()
+            val m = minute.text.toString().toIntOrNull()
+            if (d == null || d !in 0..365 || h == null || h !in 0..23 || m == null || m !in 0..59) {
+                toast("Zadej 0–365 dní, hodinu 0–23 a minutu 0–59.")
+                return@button
+            }
+            ReminderNotifications.saveTiming(this, type, ReminderNotifications.Timing(d, h, m))
+            onSaved()
+            dialog.dismiss()
+        }, margin(0, 18, 0, 8))
+        content.addView(button("Zrušit") { dialog.dismiss() })
+        dialog.setContentView(ScrollView(this).apply { addView(content) })
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 104) return
+        if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            ReminderNotifications.setEnabled(this, true)
+            database?.let { ReminderNotifications.sync(this, it, doneItems()) }
+            toast("Připomínky jsou zapnuté.")
+        } else {
+            toast("Připomínky potřebují povolení oznámení.")
+        }
+        updateReminderButton()
     }
 
     private fun showDatabaseLoginQr() {
@@ -985,6 +1061,16 @@ class MainActivity : Activity() {
 
     private fun databaseHash(value: JSONObject): String = DatabaseRecords.hash(value)
 
+    private fun updateFooter() {
+        val version = sourceEnvelope?.optString("dbVersion")?.takeIf { it.isNotBlank() }
+            ?: runCatching {
+                databaseFile?.takeIf { it.isFile }?.readText(StandardCharsets.UTF_8)
+                    ?.let { JSONObject(it).optString("dbVersion").takeIf(String::isNotBlank) }
+            }.getOrNull()
+            ?: "neuvedena"
+        footerView?.text = "Aplikace ${BuildConfig.VERSION_NAME} · DB $version"
+    }
+
     private fun renderDatabase() {
         val data = database ?: return
         val container = itemsContainer ?: return
@@ -1010,36 +1096,20 @@ class MainActivity : Activity() {
         }
         doneKeys.retainAll(allEntries.map { itemKey(it.first) }.toSet())
         getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, doneKeys).apply()
+        ReminderNotifications.sync(this, data, doneKeys)
         renderCalendar(activeEntries)
-        val query = searchInput?.text?.toString()?.trim()?.lowercase(Locale.ROOT).orEmpty()
-        val visibleEntries = activeEntries.filter { (item, _, _) ->
-            val done = itemKey(item) in doneKeys
-            val matchesFilter = when (selectedFilter) {
-                "test", "task", "event" -> itemType(item) == selectedFilter && !done
-                "done" -> done
-                else -> true
-            }
-            val searchable = listOf("name", "date", "task", "solution")
-                .joinToString(" ") { item.optString(it) }
-                .plus(" ")
-                .plus(item.optJSONObject("quiz")?.toString().orEmpty())
-                .lowercase(Locale.ROOT)
-            matchesFilter && (query.isBlank() || searchable.contains(query))
-        }
+        updateFooter()
         val categories = listOf("test" to "Testy", "task" to "Úkoly", "event" to "Akce")
         for ((type, title) in categories) {
-            val categoryItems = visibleEntries.filter {
+            val categoryItems = activeEntries.filter {
                 itemType(it.first) == type && itemKey(it.first) !in doneKeys
             }
             addSection(container, title, categoryItems)
         }
-        val completed = visibleEntries.filter { itemKey(it.first) in doneKeys }
+        val completed = activeEntries.filter { itemKey(it.first) in doneKeys }
         if (completed.isNotEmpty()) addSection(container, "Dokončené", completed)
-        if (visibleEntries.isEmpty()) {
-            val emptyMessage = if (query.isNotBlank()) "Nic jsme nenašli. Zkus upravit hledání."
-            else if (selectedFilter == "done") "Zatím tu nejsou žádné dokončené položky."
-            else "Žádné nadcházející položky."
-            container.addView(label(emptyMessage, 15, muted, false), margin(0, 8, 0, 16))
+        if (activeEntries.isEmpty()) {
+            container.addView(label("Žádné nadcházející položky.", 15, muted, false), margin(0, 8, 0, 16))
         }
         if (inMaintainerWorkspace) renderMaintainerItems()
     }
@@ -1048,11 +1118,24 @@ class MainActivity : Activity() {
         val container = calendarContainer ?: return
         container.removeAllViews()
         val czechLocale = Locale("cs", "CZ")
+        val calendarHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        calendarHeader.addView(label("▦  Kalendář", 18, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        calendarHeader.addView(button(if (calendarExpanded) "Sbalit" else "Rozbalit") {
+            calendarExpanded = !calendarExpanded
+            renderCalendar(entries)
+        }.apply {
+            minHeight = dp(38); minWidth = 0; setPadding(dp(12), 0, dp(12), 0)
+            setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.rgb(246, 245, 250), 12)
+            contentDescription = if (calendarExpanded) "Sbalit kalendář" else "Rozbalit kalendář"
+        })
+        container.addView(calendarHeader)
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        heading.addView(label("▦  Kalendář", 18, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
         val monthName = SimpleDateFormat("LLLL yyyy", czechLocale).format(dashboardCalendarMonth.time)
             .replaceFirstChar { it.titlecase(czechLocale) }
         val monthLabel = label(monthName, 14, muted, true).apply { gravity = Gravity.CENTER }
@@ -1154,6 +1237,9 @@ class MainActivity : Activity() {
             undatedEntries.forEach { (item, index, _) ->
                 container.addView(itemCard(item, index), margin(0, 7, 0, 0))
             }
+        }
+        for (index in 1 until container.childCount) {
+            container.getChildAt(index).visibility = if (calendarExpanded) View.VISIBLE else View.GONE
         }
     }
 
