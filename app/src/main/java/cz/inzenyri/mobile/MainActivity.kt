@@ -141,6 +141,7 @@ class MainActivity : Activity() {
         databaseFile = File(workspaceDir, "data.enc.json")
         maintainerMode = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE).getBoolean("maintainer_mode", false)
         darkMode = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).getBoolean("dark_mode", false)
+        calendarExpanded = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).getBoolean("calendar_expanded", true)
         ReminderNotifications.schedule(this)
         render()
         openStoredDatabaseOrClone()
@@ -578,6 +579,7 @@ class MainActivity : Activity() {
             }
             content.addView(timingButton, margin(0, 0, 0, 10))
         }
+        content.addView(button("Poslat testovací oznámení") { sendTestNotification() }, margin(0, 0, 0, 16))
         content.addView(label(
             "QR kód obsahuje heslo k databázi. Zobraz ho jen před důvěryhodnou osobou; přístup k údržbě GitHubu tím nesdílíš.",
             14, muted, false
@@ -607,6 +609,7 @@ class MainActivity : Activity() {
     }
 
     private fun reminderTimingLabel(type: String, title: String): String {
+        if (!ReminderNotifications.typeEnabled(this, type)) return "$title · vypnuto"
         val value = ReminderNotifications.timing(this, type)
         val days = when (value.days) {
             0 -> "V daný den"
@@ -626,6 +629,13 @@ class MainActivity : Activity() {
             background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
         }
         content.addView(label("$title · oznámení", 21, ink, true))
+        val enabled = CheckBox(this).apply {
+            text = "Připomínat $title"
+            setTextColor(ink)
+            buttonTintList = android.content.res.ColorStateList.valueOf(purple)
+            isChecked = ReminderNotifications.typeEnabled(this@MainActivity, type)
+        }
+        content.addView(enabled, margin(0, 10, 0, 0))
         content.addView(label("Kolik dní předem (0 = v daný den)", 14, muted, false), margin(0, 14, 0, 5))
         val days = input("Dní předem", false).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -657,6 +667,7 @@ class MainActivity : Activity() {
                 return@button
             }
             ReminderNotifications.saveTiming(this, type, ReminderNotifications.Timing(d, h, m))
+            ReminderNotifications.setTypeEnabled(this, type, enabled.isChecked)
             onSaved()
             dialog.dismiss()
         }, margin(0, 18, 0, 8))
@@ -669,6 +680,11 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 105) {
+            if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) sendTestNotification()
+            else toast("Testovací oznámení potřebuje povolení v Androidu.")
+            return
+        }
         if (requestCode != 104) return
         if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             ReminderNotifications.setEnabled(this, true)
@@ -678,6 +694,25 @@ class MainActivity : Activity() {
             toast("Připomínky potřebují povolení oznámení.")
         }
         updateReminderButton()
+    }
+
+    private fun sendTestNotification() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (getSharedPreferences("reminders", MODE_PRIVATE).getBoolean("permission_requested", false) &&
+                !shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS)) {
+                startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+                toast("Povol oznámení a potom pošli test znovu.")
+            } else {
+                getSharedPreferences("reminders", MODE_PRIVATE).edit().putBoolean("permission_requested", true).apply()
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 105)
+            }
+        } else if (ReminderNotifications.sendTest(this)) {
+            toast("Testovací oznámení odesláno.")
+        } else {
+            startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
+            toast("Android oznámení blokuje. Povol je a potom pošli test znovu.")
+        }
     }
 
     private fun showDatabaseLoginQr() {
@@ -1121,16 +1156,23 @@ class MainActivity : Activity() {
         val calendarHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-        }
-        calendarHeader.addView(label("▦  Kalendář", 18, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
-        calendarHeader.addView(button(if (calendarExpanded) "Sbalit" else "Rozbalit") {
-            calendarExpanded = !calendarExpanded
-            renderCalendar(entries)
-        }.apply {
-            minHeight = dp(38); minWidth = 0; setPadding(dp(12), 0, dp(12), 0)
-            setTextColor(ink); background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.rgb(246, 245, 250), 12)
+            isClickable = true
+            isFocusable = true
             contentDescription = if (calendarExpanded) "Sbalit kalendář" else "Rozbalit kalendář"
-        })
+            setOnClickListener {
+                calendarExpanded = !calendarExpanded
+                getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putBoolean("calendar_expanded", calendarExpanded).apply()
+                renderCalendar(entries)
+            }
+        }
+        calendarHeader.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_chevron_down)
+            setColorFilter(ink)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            rotation = if (calendarExpanded) 180f else 0f
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        calendarHeader.addView(label("Kalendář", 18, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
         container.addView(calendarHeader)
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1404,8 +1446,11 @@ class MainActivity : Activity() {
         quizExitAction = ::returnToItems
         var index = 0
         var score = 0
+        var questionOrder = (0 until questions.length()).filter { questions.optJSONObject(it) != null }
+        if (questionOrder.isEmpty()) { returnToItems(); return }
+        val failedQuestions = mutableListOf<Int>()
         fun showQuestion() {
-            val isComplete = index >= questions.length()
+            val isComplete = index >= questionOrder.size
             val page = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(20), dp(18), dp(20), dp(20))
@@ -1439,32 +1484,47 @@ class MainActivity : Activity() {
                 result.addView(label("Procvičování dokončeno", 25, ink, true).apply {
                     gravity = Gravity.CENTER
                 }, margin(0, 0, 0, 20))
-                result.addView(label("$score / ${questions.length()}", 56, purple, true).apply {
+                result.addView(label("$score / ${questionOrder.size}", 56, purple, true).apply {
                     gravity = Gravity.CENTER
                 }, margin(0, 0, 0, 6))
-                val percent = score * 100 / questions.length()
+                val percent = score * 100 / questionOrder.size
                 result.addView(label("Správně $percent % odpovědí", 15, muted, false).apply {
                     gravity = Gravity.CENTER
                 }, margin(0, 0, 0, 26))
+                if (failedQuestions.isNotEmpty()) {
+                    result.addView(button("Zopakovat chybné a přeskočené (${failedQuestions.size})") {
+                        questionOrder = failedQuestions.toList()
+                        failedQuestions.clear()
+                        index = 0
+                        score = 0
+                        showQuestion()
+                    }, margin(0, 0, 0, 10))
+                }
                 result.addView(button("Zkusit znovu") {
+                    questionOrder = (0 until questions.length()).filter { questions.optJSONObject(it) != null }
+                    failedQuestions.clear()
                     index = 0
                     score = 0
                     showQuestion()
                 })
                 result.addView(button("Zpět k přehledu") { returnToItems() }, margin(0, 10, 0, 0))
-                page.addView(result, LinearLayout.LayoutParams(-1, 0, 1f))
+                page.addView(ScrollView(this).apply {
+                    isFillViewport = true
+                    addView(result)
+                }, LinearLayout.LayoutParams(-1, 0, 1f))
                 setContentView(page)
                 return
             }
 
-            page.addView(label("Otázka ${index + 1} z ${questions.length()}", 14, muted, true), margin(0, 0, 0, 8))
+            page.addView(label("Otázka ${index + 1} z ${questionOrder.size}", 14, muted, true), margin(0, 0, 0, 8))
             page.addView(ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-                max = questions.length()
+                max = questionOrder.size
                 progress = index
                 progressTintList = android.content.res.ColorStateList.valueOf(purple)
                 progressBackgroundTintList = android.content.res.ColorStateList.valueOf(if (darkMode) Color.rgb(55, 53, 72) else Color.rgb(221, 218, 234))
             }, LinearLayout.LayoutParams(-1, dp(7)).apply { bottomMargin = dp(16) })
-            val question = questions.optJSONObject(index)
+            val questionIndex = questionOrder[index]
+            val question = questions.optJSONObject(questionIndex)
             if (question == null) { index++; showQuestion(); return }
             val kind = question.optString("type").let { if (it == "binary") "choice" else it }
             val prompt = if (kind == "punctuation") question.optString("sentence") else question.optString("prompt").ifBlank { "Otázka" }
@@ -1487,7 +1547,7 @@ class MainActivity : Activity() {
                 val options = question.optJSONArray("options") ?: JSONArray()
                 for (selected in 0 until options.length()) {
                     body.addView(button(options.optString(selected)) {
-                        if (selected == question.optInt("answer", -1)) score++
+                        if (selected == question.optInt("answer", -1)) score++ else failedQuestions.add(questionIndex)
                         index++
                         showQuestion()
                     }.apply {
@@ -1522,12 +1582,13 @@ class MainActivity : Activity() {
                         }
                         normalized(input) == normalized(answers.optString(answerIndex))
                     }
-                    if (accepted) score++
+                    if (accepted) score++ else failedQuestions.add(questionIndex)
                     index++
                     showQuestion()
                 }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
             }
             footer.addView(button("Přeskočit") {
+                failedQuestions.add(questionIndex)
                 index++
                 showQuestion()
             }.apply {

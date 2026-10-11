@@ -21,6 +21,30 @@ internal object ReminderNotifications {
     val types = listOf("test" to "Testy", "task" to "Úkoly", "event" to "Akce")
     data class Timing(val days: Int, val hour: Int, val minute: Int)
 
+    fun typeEnabled(context: Context, type: String) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getBoolean("${type}_enabled", true)
+
+    fun setTypeEnabled(context: Context, type: String, enabled: Boolean) {
+        require(types.any { it.first == type })
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("${type}_enabled", enabled).apply()
+        schedule(context, type)
+        if (!enabled) context.getSystemService(NotificationManager::class.java).cancel(ID + types.indexOfFirst { it.first == type })
+    }
+
+    fun sendTest(context: Context): Boolean {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Připomínky položek", NotificationManager.IMPORTANCE_DEFAULT))
+        if (!allowed(context)) return false
+        val open = PendingIntent.getActivity(context, 419, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return try {
+            manager.notify(419, NotificationCompat.Builder(context, CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification).setContentTitle("Testovací oznámení")
+                .setContentText("Oznámení Inženýrů fungují.").setContentIntent(open).setAutoCancel(true).build())
+            true
+        } catch (_: SecurityException) { false }
+    }
+
     fun timing(context: Context, type: String): Timing {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return Timing(prefs.getInt("${type}_days", 1).coerceIn(0, 365),
@@ -92,7 +116,7 @@ internal object ReminderNotifications {
                     .putExtra("due_day", SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(due.time)),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             alarm.cancel(intent)
-            if (enabled(context)) alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.timeInMillis, intent)
+            if (enabled(context) && typeEnabled(context, type)) alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.timeInMillis, intent)
         }
     }
 
@@ -101,6 +125,7 @@ internal object ReminderNotifications {
         val type = intent.getStringExtra("type") ?: return
         val index = types.indexOfFirst { it.first == type }
         if (index < 0) return
+        if (!typeEnabled(context, type)) return
         val key = intent.getStringExtra("due_day") ?: return
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val counts = runCatching { JSONObject(prefs.getString("counts", "{}") ?: "{}").optJSONObject(key) }.getOrNull()
