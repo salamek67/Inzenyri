@@ -93,6 +93,12 @@ class MainActivity : Activity() {
     private var pendingApk: File? = null
     private var updateAsset: JSONObject? = null
     private var maintainerButton: Button? = null
+    private var maintainerItemsContainer: LinearLayout? = null
+    private var editingItemIndex: Int? = null
+    private var originalQuizPrompt = ""
+    private var originalQuizAnswers = ""
+    private var originalQuizIsSimpleText = false
+    private var clearQuizCheckBox: CheckBox? = null
     private var swipeRefreshLayout: SwipeRefreshLayout? = null
     private var dashboardView: View? = null
     private var dashboardStatusView: TextView? = null
@@ -362,6 +368,17 @@ class MainActivity : Activity() {
             solutionInput = input("Řešení v Markdownu (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             quizPromptInput = input("Otázka (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             quizAnswersInput = input("Správné odpovědi (odděl |)", false).also { addView(it, margin(0, 8, 0, 0)) }
+            clearQuizCheckBox = CheckBox(this@MainActivity).apply {
+                text = "Odebrat procvičování"
+                setTextColor(ink)
+                visibility = View.GONE
+                setOnCheckedChangeListener { _, checked ->
+                    if (editingItemIndex != null && !originalQuizIsSimpleText) {
+                        quizPromptInput?.isEnabled = checked
+                        quizAnswersInput?.isEnabled = checked
+                    }
+                }
+            }.also { addView(it, margin(0, 4, 0, 0)) }
             addButton = button("Přidat položku") { addItem() }
             addView(addButton, margin(0, 16, 0, 4))
         }
@@ -520,10 +537,18 @@ class MainActivity : Activity() {
         page.addView(header, margin(0, 0, 0, 16))
         statusView = label("Přidávej položky nebo pushni změny na origin.", 13, muted, false)
         page.addView(statusView, margin(0, 0, 0, 12))
+        page.addView(button("＋  Nová položka") { startNewItem() }, margin(0, 0, 0, 12))
         form?.let { view ->
             (view.parent as? ViewGroup)?.removeView(view)
+            view.visibility = View.GONE
+            view.setPadding(dp(14), dp(14), dp(14), dp(14))
+            view.background = rounded(if (darkMode) Color.rgb(29, 29, 44) else Color.rgb(238, 237, 246), 20)
             page.addView(view)
         }
+        val maintenanceItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        maintainerItemsContainer = maintenanceItems
+        page.addView(maintenanceItems, margin(0, 2, 0, 8))
+        renderMaintainerItems()
         exportButton?.visibility = View.VISIBLE
         pushButton?.visibility = View.VISIBLE
         exportButton?.let { view ->
@@ -534,11 +559,15 @@ class MainActivity : Activity() {
             (view.parent as? ViewGroup)?.removeView(view)
             page.addView(view, margin(0, 0, 0, 12))
         }
-        setContentView(ScrollView(this).apply { addView(page) })
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            addView(page, ViewGroup.LayoutParams(-1, -1))
+        })
     }
 
     private fun showDashboard() {
         inMaintainerWorkspace = false
+        editingItemIndex = null
         statusView = dashboardStatusView
         form?.visibility = View.GONE
         exportButton?.visibility = View.GONE
@@ -779,6 +808,25 @@ class MainActivity : Activity() {
             else "Žádné nadcházející položky."
             container.addView(label(emptyMessage, 15, muted, false), margin(0, 8, 0, 16))
         }
+        if (inMaintainerWorkspace) renderMaintainerItems()
+    }
+
+    private fun renderMaintainerItems() {
+        val container = maintainerItemsContainer ?: return
+        val data = database ?: return
+        container.removeAllViews()
+        val tasks = data.optJSONArray("tasks") ?: JSONArray()
+        val entries = (0 until tasks.length()).mapNotNull { index ->
+            val item = tasks.optJSONObject(index) ?: return@mapNotNull null
+            val date = parseDatabaseDate(item.optString("date"))
+            Triple(item, index, date)
+        }.sortedWith(compareBy<Triple<JSONObject, Int, Date?>>({ it.third ?: Date(Long.MAX_VALUE) }, { it.second }))
+        for ((type, title) in listOf("test" to "Testy", "task" to "Úkoly", "event" to "Akce")) {
+            addSection(container, title, entries.filter { itemType(it.first) == type })
+        }
+        if (entries.isEmpty()) {
+            container.addView(label("Zatím tu nejsou žádné položky k úpravě.", 14, muted, false), margin(0, 8, 0, 16))
+        }
     }
 
     private fun addSection(container: LinearLayout, title: String, entries: List<Triple<JSONObject, Int, Date?>>) {
@@ -813,11 +861,11 @@ class MainActivity : Activity() {
             background = rounded(if (darkMode) Color.rgb(48, 43, 69) else Color.rgb(241, 237, 255), 99)
         })
         section.addView(heading)
-        entries.forEach { (item, _, _) -> section.addView(itemCard(item), margin(0, 0, 0, 8)) }
+        entries.forEach { (item, index, _) -> section.addView(itemCard(item, index), margin(0, 0, 0, 8)) }
         container.addView(section, margin(0, 14, 0, 0))
     }
 
-    private fun itemCard(item: JSONObject): View {
+    private fun itemCard(item: JSONObject, index: Int? = null): View {
         val completed = itemKey(item) in doneItems()
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -891,6 +939,18 @@ class MainActivity : Activity() {
         val questions = item.optJSONObject("quiz")?.optJSONArray("questions")
         if (questions != null && questions.length() > 0) {
             card.addView(button("Spustit procvičování →") { startQuiz(item) }, margin(0, 8, 0, 0))
+        }
+        if (inMaintainerWorkspace && maintainerMode && index != null) {
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            actions.addView(button("Upravit") { startEditingItem(index) },
+                LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+            actions.addView(button("Smazat") { confirmDeleteItem(index) }.apply {
+                background = rounded(Color.rgb(183, 54, 66), 16)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            card.addView(actions, margin(0, 10, 0, 0))
         }
         return card
     }
@@ -997,8 +1057,94 @@ class MainActivity : Activity() {
     private fun doneItems(): MutableSet<String> = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE)
         .getStringSet(DONE_ITEMS_KEY, emptySet())?.toMutableSet() ?: mutableSetOf()
 
+    private fun startNewItem() {
+        editingItemIndex = null
+        originalQuizPrompt = ""
+        originalQuizAnswers = ""
+        originalQuizIsSimpleText = false
+        titleInput?.text?.clear()
+        descriptionInput?.text?.clear()
+        solutionInput?.text?.clear()
+        quizPromptInput?.text?.clear()
+        quizAnswersInput?.text?.clear()
+        quizPromptInput?.isEnabled = true
+        quizAnswersInput?.isEnabled = true
+        clearQuizCheckBox?.isChecked = false
+        clearQuizCheckBox?.visibility = View.GONE
+        dateValue = today()
+        dateButton?.text = "Datum · $dateValue"
+        addButton?.text = "Přidat položku"
+        selectType("task")
+        form?.visibility = View.VISIBLE
+        statusView?.text = "Vyplň novou položku."
+    }
+
+    private fun startEditingItem(index: Int) {
+        if (!maintainerMode) return
+        val tasks = database?.optJSONArray("tasks") ?: return
+        val item = tasks.optJSONObject(index) ?: return
+        editingItemIndex = index
+        selectType(itemType(item))
+        titleInput?.setText(item.optString("name"))
+        dateValue = item.optString("date").ifBlank { today() }
+        dateButton?.text = "Datum · $dateValue"
+        descriptionInput?.setText(item.optString("task"))
+        solutionInput?.setText(item.optString("solution"))
+
+        val firstQuestion = item.optJSONObject("quiz")?.optJSONArray("questions")?.optJSONObject(0)
+        val simpleTextQuestion = firstQuestion?.optString("type") == "text"
+        originalQuizIsSimpleText = simpleTextQuestion
+        originalQuizPrompt = if (simpleTextQuestion) firstQuestion?.optString("prompt").orEmpty() else ""
+        originalQuizAnswers = if (simpleTextQuestion) {
+            firstQuestion?.optJSONArray("answers")?.let { answers ->
+                (0 until answers.length()).joinToString(" | ") { answers.optString(it) }
+            }.orEmpty()
+        } else ""
+        quizPromptInput?.setText(originalQuizPrompt)
+        quizAnswersInput?.setText(originalQuizAnswers)
+        quizPromptInput?.isEnabled = !item.has("quiz") || simpleTextQuestion
+        quizAnswersInput?.isEnabled = !item.has("quiz") || simpleTextQuestion
+        clearQuizCheckBox?.text = if (item.has("quiz") && !simpleTextQuestion) {
+            "Nahradit nebo odebrat rozšířené procvičování"
+        } else "Odebrat procvičování"
+        clearQuizCheckBox?.isChecked = false
+        clearQuizCheckBox?.visibility = if (item.has("quiz")) View.VISIBLE else View.GONE
+        addButton?.text = "Uložit změny"
+        form?.visibility = View.VISIBLE
+        statusView?.text = if (item.has("quiz") && !simpleTextQuestion) {
+            "Uprav položku. Rozšířené procvičování můžeš zachovat nebo odebrat."
+        } else {
+            "Uprav položku a ulož změny."
+        }
+        titleInput?.requestFocus()
+    }
+
+    private fun confirmDeleteItem(index: Int) {
+        if (!maintainerMode) return
+        val tasks = database?.optJSONArray("tasks") ?: return
+        val item = tasks.optJSONObject(index) ?: return
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Smazat položku?")
+            .setMessage(item.optString("name").ifBlank { "Bez názvu" })
+            .setNegativeButton("Zrušit", null)
+            .setPositiveButton("Smazat") { _, _ ->
+                val done = doneItems().apply { remove(itemKey(item)) }
+                getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, done).apply()
+                tasks.remove(index)
+                statusView?.text = "Položka smazána · ulož změny pushnutím na origin."
+                renderDatabase()
+                persistLocalDatabase()
+                toast("Položka smazána")
+            }
+            .show()
+    }
+
     private fun addItem() {
         if (!maintainerMode) return toast("Pro přidávání se nejdřív propoj s GitHubem tlačítkem 🔧.")
+        if (editingItemIndex != null) {
+            saveEditedItem(editingItemIndex!!)
+            return
+        }
         val db = database ?: return toast("Nejdřív otevři databázi.")
         val name = titleInput?.text?.toString()?.trim().orEmpty()
         if (name.isBlank()) {
@@ -1022,6 +1168,7 @@ class MainActivity : Activity() {
                 )))
             }
         }
+        clearQuizCheckBox?.isChecked = false
         db.getJSONArray("tasks").put(item)
         titleInput?.text?.clear()
         descriptionInput?.text?.clear()
@@ -1035,6 +1182,75 @@ class MainActivity : Activity() {
         persistLocalDatabase()
         titleInput?.requestFocus()
         toast("Položka přidána")
+    }
+
+    private fun saveEditedItem(index: Int) {
+        val db = database ?: return
+        val tasks = db.optJSONArray("tasks") ?: return
+        val original = tasks.optJSONObject(index) ?: return toast("Položka už v databázi není.")
+        val name = titleInput?.text?.toString()?.trim().orEmpty()
+        if (name.isBlank()) {
+            titleInput?.error = "Zadej název"
+            return
+        }
+        val parsedDate = parseDate(dateValue) ?: return toast("Vyber platné datum.")
+        val updated = JSONObject(original.toString())
+            .put("type", selectedType)
+            .put("name", name)
+            .put("date", SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(parsedDate))
+            .put("task", descriptionInput?.text?.toString()?.trim().orEmpty())
+        if (selectedType == "task") {
+            updated.put("solution", solutionInput?.text?.toString()?.trim().orEmpty())
+        }
+
+        val prompt = quizPromptInput?.text?.toString()?.trim().orEmpty()
+        val answers = quizAnswersInput?.text?.toString().orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
+        val quizChanged = prompt != originalQuizPrompt || answers.joinToString(" | ") != originalQuizAnswers
+        val removeOrReplaceQuiz = clearQuizCheckBox?.isChecked == true
+        val advancedQuiz = original.has("quiz") && !originalQuizIsSimpleText
+        if (removeOrReplaceQuiz && (!advancedQuiz || prompt.isBlank() && answers.isEmpty())) {
+            updated.remove("quiz")
+        } else if (removeOrReplaceQuiz || quizChanged) {
+            if (prompt.isBlank() || answers.isEmpty()) {
+                val oldQuestions = original.optJSONObject("quiz")?.optJSONArray("questions")
+                if (originalQuizIsSimpleText && oldQuestions?.length() == 1 && prompt.isBlank() && answers.isEmpty()) {
+                    updated.remove("quiz")
+                } else {
+                    return toast("Vyplň otázku i alespoň jednu správnou odpověď, nebo zaškrtni odebrání procvičování.")
+                }
+            } else if (originalQuizIsSimpleText && !removeOrReplaceQuiz) {
+                val quiz = updated.optJSONObject("quiz") ?: JSONObject().put("shuffle", false)
+                val questions = quiz.optJSONArray("questions") ?: JSONArray()
+                val firstQuestion = questions.optJSONObject(0)?.let { JSONObject(it.toString()) } ?: JSONObject()
+                firstQuestion.put("type", "text").put("prompt", prompt).put("answers", JSONArray(answers))
+                if (!firstQuestion.has("ignoreCase")) firstQuestion.put("ignoreCase", true)
+                if (questions.length() == 0) questions.put(firstQuestion) else questions.put(0, firstQuestion)
+                quiz.put("questions", questions)
+                updated.put("quiz", quiz)
+            } else if (original.has("quiz") && !removeOrReplaceQuiz) {
+                return toast("Rozšířené procvičování můžeš zachovat, nebo zaškrtnutím nahradit jednoduchou otázkou.")
+            } else {
+                updated.put("quiz", JSONObject().put("shuffle", false).put("questions", JSONArray().put(
+                    JSONObject().put("type", "text").put("prompt", prompt).put("answers", JSONArray(answers)).put("ignoreCase", true)
+                )))
+            }
+        }
+        if (updated.toString() == original.toString()) {
+            statusView?.text = "Nebyla provedena žádná změna."
+            form?.visibility = View.GONE
+            editingItemIndex = null
+            return
+        }
+        tasks.put(index, updated)
+        editingItemIndex = null
+        clearQuizCheckBox?.isChecked = false
+        clearQuizCheckBox?.visibility = View.GONE
+        addButton?.text = "Přidat položku"
+        form?.visibility = View.GONE
+        statusView?.text = "Položka upravena · ulož změny pushnutím na origin."
+        renderDatabase()
+        persistLocalDatabase()
+        toast("Změny uloženy")
     }
 
     private fun chooseDestination() {
@@ -1238,7 +1454,12 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 failGithubLoginDialog(e.message ?: "GitHub se nepodařilo otevřít.")
             }
-        }.apply { isEnabled = false; alpha = 0.55f }
+        }.apply {
+            isEnabled = false
+            alpha = 1f
+            setTextColor(Color.WHITE)
+            background = rounded(if (darkMode) Color.rgb(92, 67, 164) else Color.rgb(77, 49, 157), 16)
+        }
         actions.addView(githubLoginCancelButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
         actions.addView(githubLoginOpenButton, LinearLayout.LayoutParams(0, -2, 1f))
         content.addView(actions, margin(0, 18, 0, 0))
@@ -1300,6 +1521,7 @@ class MainActivity : Activity() {
         githubLoginStatusView?.text = message
         githubLoginOpenButton?.text = "Zavřít"
         githubLoginOpenButton?.isEnabled = true
+        githubLoginOpenButton?.alpha = 1f
         githubLoginOpenButton?.setOnClickListener { githubLoginDialog?.dismiss() }
         githubLoginCancelButton?.visibility = View.GONE
     }
@@ -1332,6 +1554,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     githubLoginCodeView?.text = userCode
                     githubLoginOpenButton?.isEnabled = true
+                    githubLoginOpenButton?.alpha = 1f
                     githubLoginStatusView?.text = "Zadej kód v GitHubu a potvrď přístup."
                     setGithubLoginStep(0, "SUCCESS")
                     setGithubLoginStep(1, "RUNNING")

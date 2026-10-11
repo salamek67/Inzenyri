@@ -29,6 +29,8 @@ COMMANDS = (
     "encrypt",
     "init",
     "password",
+    "github-login",
+    "github-status",
     "commit",
     "help",
     "clear",
@@ -53,6 +55,34 @@ def github_cli(arguments, **kwargs):
         env=github_cli_environment(),
         **kwargs,
     )
+
+
+def github_login():
+    """Sign in to the repository-specific GitHub CLI profile."""
+    try:
+        github_cli(
+            [
+                "auth", "login", "--hostname", "github.com", "--web",
+                "--git-protocol", "ssh", "--skip-ssh-key",
+            ],
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise DataError("GitHub CLI (gh) není nainstalované.") from exc
+
+
+def github_status():
+    """Show authentication state for this repository's isolated profile."""
+    try:
+        result = github_cli(["auth", "status", "--hostname", "github.com"])
+    except FileNotFoundError as exc:
+        raise DataError("GitHub CLI (gh) není nainstalované.") from exc
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise DataError(
+            "Tento repozitář zatím nemá přihlášený GitHub účet. Spusť příkaz github-login."
+            + (f"\n{detail}" if detail else "")
+        )
 
 
 class DataError(Exception):
@@ -1046,9 +1076,9 @@ def commit_build_targets(message):
     if prefix.startswith("[ci skip]"):
         return False, False
     if prefix.startswith("[app skip]"):
-        return False, True
-    if prefix.startswith("[page skip]"):
         return True, False
+    if prefix.startswith("[page skip]"):
+        return False, True
     return True, True
 
 
@@ -1194,6 +1224,8 @@ def help_text():
     command("encrypt", "Zašifrovat", "použít uložené heslo")
     command("init", "První nastavení", "vytvořit nové heslo a data")
     command("password", "Změnit heslo", "bezpečně přešifrovat data")
+    command("github-login", "Přihlásit GitHub", "uložit přihlášení pro tento repozitář")
+    command("github-status", "GitHub účet", "ověřit přihlášení používané pro releasy")
     command("commit [text]", "Publikovat", "commit a push na GitHub")
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
@@ -1212,6 +1244,10 @@ def dispatch(cmd, args=()):
         initialize_private()
     elif cmd in {"password", "passwd", "change-password"}:
         change_password()
+    elif cmd in {"github-login", "gh-login"}:
+        github_login()
+    elif cmd in {"github-status", "gh-status"}:
+        github_status()
     elif cmd in {"a", "add"}:
         if len(args) > 1:
             raise DataError("Příkaz add přijímá nejvýše jednu zkratku typu.")
