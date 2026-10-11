@@ -1,6 +1,7 @@
 package cz.inzenyri.mobile
 
 import android.app.Activity
+import android.app.Dialog
 import android.app.DatePickerDialog
 import android.content.Intent
 import android.net.Uri
@@ -466,14 +467,18 @@ class MainActivity : Activity() {
     }
 
     private fun openSettings() {
+        val dialog = Dialog(this)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(12), dp(22), dp(8))
+            setPadding(dp(22), dp(18), dp(22), dp(22))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
         }
-        content.addView(label("Verze ${BuildConfig.VERSION_NAME}", 14, muted, false), margin(0, 0, 0, 12))
-        val dialog = android.app.AlertDialog.Builder(this).setTitle("Nastavení").setView(content)
-            .setNegativeButton("Zavřít", null).create()
-        themeButton = button(if (darkMode) "☀  Zapnout světlý režim" else "☾  Zapnout tmavý režim") {
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        header.addView(label("Nastavení", 23, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(button("✕") { dialog.dismiss() }, LinearLayout.LayoutParams(dp(42), dp(42)))
+        content.addView(header)
+        content.addView(label("Inženýři · verze ${BuildConfig.VERSION_NAME}", 13, muted, false), margin(0, 5, 0, 20))
+        themeButton = button(if (darkMode) "☀  Světlý vzhled" else "☾  Tmavý vzhled") {
             dialog.dismiss()
             toggleDarkMode()
         }
@@ -482,7 +487,12 @@ class MainActivity : Activity() {
             if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
         }
         content.addView(updateButton)
+        (header.getChildAt(1) as Button).setOnClickListener { dialog.dismiss() }
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.setCanceledOnTouchOutside(true)
         dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun showMaintainerWorkspace() {
@@ -769,11 +779,15 @@ class MainActivity : Activity() {
             "Akce" -> "◷" to Color.rgb(60, 130, 246)
             else -> "✓" to Color.rgb(36, 133, 91)
         }
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(4))
+            background = rounded(if (darkMode) Color.rgb(29, 29, 44) else Color.rgb(232, 231, 240), 22)
+        }
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.rgb(255, 255, 255), 15)
+            setPadding(dp(2), dp(2), dp(2), dp(10))
         }
         heading.addView(TextView(this).apply {
             text = symbol
@@ -788,34 +802,49 @@ class MainActivity : Activity() {
             setPadding(dp(9), dp(5), dp(9), dp(5))
             background = rounded(if (darkMode) Color.rgb(48, 43, 69) else Color.rgb(241, 237, 255), 99)
         })
-        container.addView(heading, margin(0, 14, 0, 10))
-        entries.forEach { (item, _, _) -> container.addView(itemCard(item), margin(0, 0, 0, 10)) }
+        section.addView(heading)
+        entries.forEach { (item, _, _) -> section.addView(itemCard(item), margin(0, 0, 0, 8)) }
+        container.addView(section, margin(0, 14, 0, 0))
     }
 
     private fun itemCard(item: JSONObject): View {
+        val completed = itemKey(item) in doneItems()
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(15), dp(16), dp(15))
-            background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 20)
+            background = rounded(when {
+                darkMode && completed -> Color.rgb(48, 47, 63)
+                darkMode -> Color.rgb(35, 35, 53)
+                completed -> Color.rgb(240, 239, 245)
+                else -> Color.WHITE
+            }, 18)
         }
         val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val checkbox = CheckBox(this).apply {
-            isChecked = itemKey(item) in doneItems()
-            contentDescription = if (isChecked) "Vrátit mezi aktivní" else "Označit jako dokončené"
-            setOnCheckedChangeListener { _, checked ->
+        val checkbox = TextView(this).apply {
+            gravity = Gravity.CENTER
+            textSize = 16f
+            isSelected = completed
+            text = if (completed) "✓" else ""
+            setTextColor(if (completed) Color.WHITE else muted)
+            background = rounded(if (completed) purple else if (darkMode) Color.rgb(62, 61, 78) else Color.WHITE, 9)
+            contentDescription = if (completed) "Vrátit mezi aktivní" else "Označit jako dokončené"
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                val checked = !isSelected
                 val values = doneItems()
                 if (checked) values.add(itemKey(item)) else values.remove(itemKey(item))
                 getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, values).apply()
                 renderDatabase()
             }
-        }
+        }.also { it.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(12) } }
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val accent = when (itemType(item)) {
             "test" -> Color.rgb(236, 108, 104)
             "event" -> Color.rgb(60, 130, 246)
             else -> purple
         }
-        titleBlock.addView(label(item.optString("name").ifBlank { "Bez názvu" }, 17, ink, true))
+        titleBlock.addView(label(item.optString("name").ifBlank { "Bez názvu" }, 17, if (completed) muted else ink, true))
         titleBlock.addView(label(item.optString("date").ifBlank { "Bez data" }, 13, accent, true), margin(0, 3, 0, 0))
         heading.addView(checkbox)
         heading.addView(titleBlock, LinearLayout.LayoutParams(0, -2, 1f))
@@ -1536,31 +1565,12 @@ class MainActivity : Activity() {
         updateAsset = null
         updateButton?.text = "Zkontrolovat aktualizace aplikace"
         if (!silent) updateButton?.isEnabled = false
-        val saved = readGithubCredentials()
-        if (saved != null) {
-            networkWorker.execute {
-                try { checkLatestRelease(validCredentials(saved).accessToken, showResult = !silent) }
-                catch (e: Exception) {
-                    if (e.message?.contains("HTTP 401") == true) clearGithubToken()
-                    runOnUiThread {
-                        statusView?.text = e.message ?: "Kontrola aktualizací se nezdařila."
-                        if (!silent) toast(statusView?.text.toString())
-                        updateButton?.isEnabled = true
-                    }
-                }
-            }
-            return
-        }
-        if (!silent) {
-            runGithubTask { checkLatestRelease(it, showResult = true) }
-            return
-        }
         networkWorker.execute {
             try {
                 checkLatestRelease(null, showResult = !silent)
             } catch (e: Exception) {
                 runOnUiThread {
-                    statusView?.text = "Pro kontrolu soukromých vydání použij tlačítko aktualizací a přihlas se přes GitHub."
+                    statusView?.text = e.message ?: "Kontrola aktualizací se nezdařila."
                     if (!silent) toast(statusView?.text.toString())
                     updateButton?.isEnabled = true
                 }
