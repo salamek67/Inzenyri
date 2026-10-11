@@ -169,6 +169,8 @@ class MainActivity : Activity() {
         worker.execute {
             try {
                 val raw = encryptedOutput(current, pass, envelope)
+                val verification = JSONObject(String(decrypt(JSONObject(raw), pass), StandardCharsets.UTF_8))
+                require(verification.optJSONArray("tasks") != null) { "Ověření zašifrované databáze selhalo." }
                 saveLocalDatabase(raw)
                 runOnUiThread {
                     password?.fill('\u0000')
@@ -280,18 +282,6 @@ class MainActivity : Activity() {
             setOnClickListener { lockDatabase() }
         }
         topBar.addView(lockButton, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
-        themeButton = Button(this).apply {
-            text = if (darkMode) "☀" else "☾"
-            contentDescription = if (darkMode) "Zapnout světlý režim" else "Zapnout tmavý režim"
-            textSize = 20f
-            minWidth = dp(48)
-            minHeight = dp(48)
-            isAllCaps = false
-            setTextColor(ink)
-            background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
-            setOnClickListener { toggleDarkMode() }
-        }
-        topBar.addView(themeButton, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
         maintainerButton = Button(this).apply {
             text = if (maintainerMode) "🔑" else "🔧"
             contentDescription = if (maintainerMode) "GitHub maintainer účet je propojen" else "Propojit maintainer účet s GitHubem"
@@ -481,12 +471,18 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(12), dp(22), dp(8))
         }
         content.addView(label("Verze ${BuildConfig.VERSION_NAME}", 14, muted, false), margin(0, 0, 0, 12))
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Nastavení").setView(content)
+            .setNegativeButton("Zavřít", null).create()
+        themeButton = button(if (darkMode) "☀  Zapnout světlý režim" else "☾  Zapnout tmavý režim") {
+            dialog.dismiss()
+            toggleDarkMode()
+        }
+        content.addView(themeButton, margin(0, 0, 0, 10))
         updateButton = button(if (updateAsset == null) "Zkontrolovat aktualizace aplikace" else "Stáhnout dostupnou aktualizaci") {
             if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
         }
         content.addView(updateButton)
-        android.app.AlertDialog.Builder(this).setTitle("Nastavení").setView(content)
-            .setNegativeButton("Zavřít", null).show()
+        dialog.show()
     }
 
     private fun showMaintainerWorkspace() {
@@ -589,6 +585,10 @@ class MainActivity : Activity() {
         card.addView(statusView, margin(0, 0, 0, 12))
         val unlockButton = button("Odemknout") { }
         card.addView(unlockButton)
+        updateButton = button(if (updateAsset == null) "Zkontrolovat aktualizace aplikace" else "Stáhnout dostupnou aktualizaci") {
+            if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
+        }
+        card.addView(updateButton, margin(0, 10, 0, 0))
         screen.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
             gravity = Gravity.CENTER
         }, margin(0, 18, 0, 0))
@@ -1162,6 +1162,9 @@ class MainActivity : Activity() {
         content.addView(label("Zadej ho pouze na github.com.", 12, muted, false).apply {
             gravity = Gravity.CENTER
         })
+        content.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
+            gravity = Gravity.CENTER
+        }, margin(0, 14, 0, 0))
 
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("GitHub · přihlášení")
