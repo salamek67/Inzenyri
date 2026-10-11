@@ -1078,7 +1078,7 @@ def clear_changelog_category(section):
     if not match:
         raise DataError(f"V CHANGELOG.md chybí část {section}.")
     updated = changelog[: match.start(2)] + "\n" + changelog[match.end(2) :]
-    atomic_write_text(updated.rstrip() + "\n")
+    atomic_write_text(CHANGELOG, updated.rstrip() + "\n")
 
 
 def github_release_exists(tag):
