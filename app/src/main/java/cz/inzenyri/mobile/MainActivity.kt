@@ -200,6 +200,9 @@ class MainActivity : Activity() {
             addButton = button("Přidat položku") { addItem() }
             addView(addButton, margin(0, 16, 0, 4))
         }
+        page.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
+            gravity = Gravity.CENTER
+        }, margin(0, 24, 0, 4))
         selectType("task")
     }
 
@@ -306,84 +309,106 @@ class MainActivity : Activity() {
 
     private fun askPassword(raw: String, preserveBaseline: Boolean = false) {
         val savedPassword = readSavedDatabasePassword()
+        val screen = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(28), dp(32), dp(28), dp(32))
+            background = rounded(Color.rgb(247, 245, 255), 0)
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(24), dp(22), dp(22))
+            background = rounded(Color.WHITE, 22)
+        }
+        screen.addView(card, LinearLayout.LayoutParams(-1, -2))
+        card.addView(label("INŽENÝŘI", 13, purple, true), margin(0, 0, 0, 18))
+        card.addView(label("Odemkni databázi", 27, ink, true), margin(0, 0, 0, 6))
+        card.addView(label("Zadej heslo, kterým je zašifrovaná databáze.", 15, muted, false), margin(0, 0, 0, 20))
         val field = EditText(this).apply {
             hint = "Heslo k databázi"
+            textSize = 16f
+            setTextColor(ink)
+            setHintTextColor(muted)
+            setPadding(dp(15), dp(12), dp(15), dp(12))
+            background = rounded(Color.rgb(250, 250, 253), 14)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             imeOptions = EditorInfo.IME_ACTION_DONE
+            minHeight = dp(52)
             savedPassword?.let { setText(String(it)) }
         }
+        card.addView(field)
         val savePassword = CheckBox(this).apply {
             text = "Bezpečně uložit heslo na tomto zařízení"
+            setTextColor(ink)
             isChecked = savedPassword != null
         }
         savedPassword?.fill('\u0000')
-        val dialogContent = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(4), dp(24), 0)
-            addView(field)
-            addView(savePassword, margin(0, 8, 0, 0))
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Odemknout databázi")
-            .setMessage("Heslo zůstává jen v zařízení a bude chráněné klíčem uloženým v Android Keystore.")
-            .setView(dialogContent)
-            .setNegativeButton("Zrušit", null)
-            .setPositiveButton("Odemknout", null)
-            .create().also { dialog ->
-                dialog.setOnShowListener {
-                    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                        val candidate = field.text.toString().toCharArray()
-                        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).isEnabled = false
-                        statusView?.text = "Ověřuji šifrování…"
-                        worker.execute {
-                            try {
-                                val envelope = JSONObject(raw)
-                                val plain = decrypt(envelope, candidate)
-                                val parsed = JSONObject(String(plain, StandardCharsets.UTF_8))
-                                require(parsed.optJSONArray("tasks") != null) { "Databáze nemá seznam položek." }
-                                runOnUiThread {
-                                    password?.fill('\u0000')
-                                    password = candidate
-                                    if (savePassword.isChecked) {
-                                        try { saveDatabasePassword(candidate) } catch (e: Exception) {
-                                            forgetDatabasePassword()
-                                            toast(e.message ?: "Heslo se nepodařilo bezpečně uložit.")
-                                        }
-                                    } else {
-                                        forgetDatabasePassword()
-                                    }
-                                    database = parsed
-                                    val savedBaseline = getSharedPreferences(DB_PREFS, MODE_PRIVATE).getString(DB_BASELINE_HASH, null)
-                                    originalDatabaseHash = if (preserveBaseline && savedBaseline != null) savedBaseline else databaseHash(parsed).also {
-                                        getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, it).apply()
-                                    }
-                                    sourceEnvelope = envelope
-                                    if (!preserveBaseline) {
-                                        try { saveLocalDatabase(raw) } catch (e: Exception) {
-                                            toast(e.message ?: "Databázi se nepodařilo uložit do zařízení.")
-                                        }
-                                    }
-                                    itemsContainer?.visibility = View.VISIBLE
-                                    form?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
-                                    exportButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
-                                    pushButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
-                                    statusView?.text = "Odemčeno · ${parsed.getJSONArray("tasks").length()} položek"
-                                    renderDatabase()
-                                    dialog.dismiss()
-                                }
-                            } catch (_: Exception) {
-                                candidate.fill('\u0000')
-                                runOnUiThread {
-                                    dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).isEnabled = true
-                                    statusView?.text = ""
-                                    toast("Heslo nesouhlasí nebo je soubor poškozený.")
-                                }
+        card.addView(savePassword, margin(0, 10, 0, 8))
+        card.addView(label("Uložené heslo je šifrované klíčem z Android Keystore.", 13, muted, false), margin(0, 0, 0, 16))
+        statusView = label("", 14, muted, false)
+        card.addView(statusView, margin(0, 0, 0, 12))
+        val unlockButton = button("Odemknout") { }
+        card.addView(unlockButton)
+        screen.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
+            gravity = Gravity.CENTER
+        }, margin(0, 18, 0, 0))
+        setContentView(screen)
+
+        unlockButton.setOnClickListener {
+            val candidate = field.text.toString().toCharArray()
+            unlockButton.isEnabled = false
+            statusView?.text = "Ověřuji heslo…"
+            worker.execute {
+                try {
+                    val envelope = JSONObject(raw)
+                    val plain = decrypt(envelope, candidate)
+                    val parsed = JSONObject(String(plain, StandardCharsets.UTF_8))
+                    require(parsed.optJSONArray("tasks") != null) { "Databáze nemá seznam položek." }
+                    runOnUiThread {
+                        password?.fill('\u0000')
+                        password = candidate
+                        if (savePassword.isChecked) {
+                            try { saveDatabasePassword(candidate) } catch (e: Exception) {
+                                forgetDatabasePassword()
+                                toast(e.message ?: "Heslo se nepodařilo bezpečně uložit.")
+                            }
+                        } else {
+                            forgetDatabasePassword()
+                        }
+                        database = parsed
+                        val savedBaseline = getSharedPreferences(DB_PREFS, MODE_PRIVATE).getString(DB_BASELINE_HASH, null)
+                        originalDatabaseHash = if (preserveBaseline && savedBaseline != null) savedBaseline else databaseHash(parsed).also {
+                            getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, it).apply()
+                        }
+                        sourceEnvelope = envelope
+                        if (!preserveBaseline) {
+                            try { saveLocalDatabase(raw) } catch (e: Exception) {
+                                toast(e.message ?: "Databázi se nepodařilo uložit do zařízení.")
                             }
                         }
+                        render()
+                        itemsContainer?.visibility = View.VISIBLE
+                        form?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
+                        exportButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
+                        pushButton?.visibility = if (maintainerMode) View.VISIBLE else View.GONE
+                        statusView?.text = "Odemčeno · ${parsed.getJSONArray("tasks").length()} položek"
+                        renderDatabase()
+                    }
+                } catch (_: Exception) {
+                    candidate.fill('\u0000')
+                    runOnUiThread {
+                        statusView?.text = "Heslo nesouhlasí nebo je soubor poškozený. Zkontroluj ho a zkus to znovu."
+                        unlockButton.isEnabled = true
                     }
                 }
-                dialog.show()
             }
+        }
+        field.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                unlockButton.performClick()
+                true
+            } else false
+        }
     }
 
     private fun connectMaintainer() {
@@ -752,8 +777,12 @@ class MainActivity : Activity() {
         }
         val saved = readGithubCredentials()
         if (saved != null) {
+            statusView?.text = "Používám uložené přihlášení ke GitHubu…"
             executeGithubTask(saved, freezeForm, task)
         } else {
+            if (hasStoredGithubCredentials()) {
+                statusView?.text = "Uložené přihlášení nejde na tomto zařízení přečíst. Přihlas se znovu."
+            }
             startDeviceLogin(clientId, freezeForm, task)
         }
     }
@@ -821,11 +850,20 @@ class MainActivity : Activity() {
                             while (!cancelled.get() && System.currentTimeMillis() < expiresAt) {
                                 Thread.sleep(interval * 1000)
                                 if (cancelled.get()) break
-                                val poll = oauthRequest("https://github.com/login/oauth/access_token", mapOf(
-                                    "client_id" to clientId,
-                                    "device_code" to deviceCode,
-                                    "grant_type" to "urn:ietf:params:oauth:grant-type:device_code"
-                                ), allowOAuthError = true)
+                                val poll = try {
+                                    oauthRequest("https://github.com/login/oauth/access_token", mapOf(
+                                        "client_id" to clientId,
+                                        "device_code" to deviceCode,
+                                        "grant_type" to "urn:ietf:params:oauth:grant-type:device_code"
+                                    ), allowOAuthError = true)
+                                } catch (e: IOException) {
+                                    // Device authorization can succeed in the browser while
+                                    // the app briefly loses DNS/network access. Keep polling
+                                    // so an approved code is not thrown away on one failed request.
+                                    if (e.message?.startsWith("GitHub OAuth HTTP") == true) throw e
+                                    Thread.sleep(interval * 1000)
+                                    continue
+                                }
                                 when (poll.optString("error")) {
                                     "authorization_pending" -> continue
                                     "slow_down" -> { interval += 5; continue }
@@ -1021,7 +1059,13 @@ class MainActivity : Activity() {
             .putString("iv", Base64.getEncoder().encodeToString(cipher.iv))
             .putString("credentials", Base64.getEncoder().encodeToString(encrypted))
             .remove("token")
-            .apply()
+            // Persist before starting the first API call. The app may be backgrounded
+            // while GitHub's device authorization page is open, so an async write can
+            // otherwise be lost if Android kills the process at that point.
+            .commit()
+            .also { persisted ->
+                if (!persisted) throw IOException("Přihlášení ke GitHubu se nepodařilo uložit do zařízení.")
+            }
     }
 
     private fun readGithubCredentials(): GitHubCredentials? {
@@ -1034,6 +1078,11 @@ class MainActivity : Activity() {
             val data = JSONObject(String(cipher.doFinal(Base64.getDecoder().decode(encrypted)), StandardCharsets.UTF_8))
             GitHubCredentials(data.getString("access_token"), data.getString("refresh_token"), data.getLong("expires_at"))
         } catch (_: Exception) { null }
+    }
+
+    private fun hasStoredGithubCredentials(): Boolean {
+        val prefs = getSharedPreferences(TOKEN_PREFS, MODE_PRIVATE)
+        return prefs.contains("iv") || prefs.contains("credentials") || prefs.contains("token")
     }
 
     private fun clearGithubToken() {
