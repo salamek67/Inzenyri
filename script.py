@@ -1113,9 +1113,57 @@ def infer_commit_prefix(changed_paths):
     return "[ci skip] "
 
 
+def ensure_repository_up_to_date():
+    """Check the actual push target before changing versions or encrypted data."""
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        if branch != "main":
+            raise DataError(
+                "Commit přes skript vyžaduje větev main. "
+                "Nejdřív na ni přejdi a zachovej své rozpracované změny."
+            )
+        print(f"  {accent('›')} Kontroluji aktuálnost vůči origin/main…")
+        subprocess.run(
+            ["git", "fetch", "--no-tags", "origin",
+             "+refs/heads/main:refs/remotes/origin/main"],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        )
+        counts = subprocess.run(
+            ["git", "rev-list", "--left-right", "--count",
+             "HEAD...refs/remotes/origin/main"],
+            cwd=ROOT, check=True, capture_output=True, text=True,
+        ).stdout.split()
+        ahead, behind = map(int, counts)
+    except (subprocess.CalledProcessError, OSError, ValueError) as exc:
+        raise DataError(
+            "Nelze ověřit aktuálnost repozitáře. Zkontroluj připojení, "
+            "přístup k origin a dostupnost větve main; commit byl přerušen."
+        ) from exc
+    if behind:
+        if ahead:
+            raise DataError(
+                f"Historie main a origin/main se rozchází: {ahead} lokálních "
+                f"a {behind} vzdálených commitů. Nejdřív sjednoť historii; "
+                "příprava commitu byla zastavena."
+            )
+        raise DataError(
+            f"Větev main zaostává za origin/main o {behind} commitů. "
+            "Nejdřív načti vzdálené změny (git pull --ff-only), "
+            "přitom zachovej rozpracovaná data. Příprava commitu byla zastavena."
+        )
+    if ahead:
+        success(f"Repozitář obsahuje změny z origin/main; {ahead} lokálních commitů čeká na push.")
+    else:
+        success("Repozitář je aktuální vůči origin/main.")
+
+
 def commit(message=None):
     if not ENC.exists():
         raise DataError("Nejdřív vytvoř data.enc.json příkazem encrypt.")
+    ensure_repository_up_to_date()
     changed = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=ROOT,
