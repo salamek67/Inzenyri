@@ -592,6 +592,13 @@ class MainActivity : Activity() {
             if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
         }
         content.addView(updateButton)
+        if (hasStoredGithubCredentials()) {
+            content.addView(button("Znovu propojit GitHub účet") {
+                dialog.dismiss()
+                clearGithubToken()
+                connectMaintainer()
+            }, margin(0, 10, 0, 0))
+        }
         (header.getChildAt(1) as Button).setOnClickListener { dialog.dismiss() }
         dialog.setContentView(ScrollView(this).apply { addView(content) })
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
@@ -1048,10 +1055,7 @@ class MainActivity : Activity() {
                 require(user.isNotBlank()) { "GitHub nevrátil přihlášený účet." }
                 setGithubLoginStep(2, "SUCCESS")
                 setGithubLoginStep(3, "RUNNING")
-                val repo = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO", token = token))
-                require(repo.optJSONObject("permissions")?.optBoolean("push") == true) {
-                    "Přihlášený GitHub účet nemá právo zápisu do repozitáře."
-                }
+                GitHubApiClient.verifyWriteAccess(GITHUB_OWNER, GITHUB_REPO, token)
                 if (database == null) {
                     val raw = fetchRemoteDatabase(token)
                     saveLocalDatabase(raw)
@@ -1885,6 +1889,7 @@ class MainActivity : Activity() {
         if (database == null || password == null) return toast("Nejdřív otevři a odemkni databázi.")
         if (!isDatabaseDirty()) return toast("Zatím nejsou žádné nové položky.")
         runGithubTask(freezeForm = true) { token ->
+            GitHubApiClient.verifyWriteAccess(GITHUB_OWNER, GITHUB_REPO, token)
             val path = "repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH"
             val current = JSONObject(githubRequest(path, token = token))
             val encodedContent = current.optString("content").ifBlank {
@@ -1960,6 +1965,15 @@ class MainActivity : Activity() {
                     failGithubLoginDialog(e.message ?: "Požadavek na GitHub se nezdařil.")
                     statusView?.text = e.message ?: "Požadavek na GitHub se nezdařil."
                     toast(e.message ?: "Požadavek na GitHub se nezdařil.")
+                    if (e.message?.contains("HTTP 403") == true || e.message?.contains("GitHub App") == true) {
+                        val (help, content) = customDialog("GitHub odmítl přístup")
+                        content.addView(label(e.message ?: "Zkontroluj oprávnění GitHub App.", 14, ink, false), margin(0, 10, 0, 16))
+                        content.addView(button("Otevřít instalace GitHub App") {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/settings/installations")))
+                        })
+                        content.addView(button("Zavřít") { help.dismiss() }, margin(0, 10, 0, 0))
+                        showCustomDialog(help)
+                    }
                 }
             } finally {
                 runOnUiThread {

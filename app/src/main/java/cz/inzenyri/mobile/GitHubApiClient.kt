@@ -15,6 +15,43 @@ internal data class GitHubCredentials(
 
 /** HTTP and OAuth transport for GitHub; UI and token storage stay in MainActivity. */
 internal object GitHubApiClient {
+    /** Account push permission alone does not prove that this App can write contents. */
+    fun verifyWriteAccess(owner: String, repository: String, token: String) {
+        val repo = JSONObject(request("repos/$owner/$repository", token = token))
+        if (repo.optJSONObject("permissions")?.optBoolean("push") != true) {
+            throw IOException("Přihlášený GitHub účet nemá právo zápisu do $owner/$repository.")
+        }
+        var page = 1
+        while (true) {
+            val result = JSONObject(request("user/installations?per_page=100&page=$page", token = token))
+            val installations = result.optJSONArray("installations") ?: break
+            for (index in 0 until installations.length()) {
+                val installation = installations.getJSONObject(index)
+                if (!installation.optJSONObject("account")?.optString("login").equals(owner, ignoreCase = true)) continue
+                if (!installation.isNull("suspended_at")) {
+                    throw IOException("Instalace GitHub App je pozastavená. Obnov ji v GitHub Settings → Applications → Installed GitHub Apps.")
+                }
+                if (installation.optJSONObject("permissions")?.optString("contents") != "write") {
+                    throw IOException("GitHub App nemá Contents: Read and write. Nastav toto oprávnění v Developer settings → GitHub Apps → Permissions & events, schval změnu instalace a účet znovu propoj.")
+                }
+                var repoPage = 1
+                while (true) {
+                    val reposResult = JSONObject(request("user/installations/${installation.getLong("id")}/repositories?per_page=100&page=$repoPage", token = token))
+                    val repositories = reposResult.optJSONArray("repositories") ?: break
+                    for (repoIndex in 0 until repositories.length()) {
+                        if (repositories.getJSONObject(repoIndex).optString("full_name").equals("$owner/$repository", ignoreCase = true)) return
+                    }
+                    if (repositories.length() < 100) break
+                    repoPage++
+                }
+                throw IOException("GitHub App není povolená pro $owner/$repository. V Settings → Applications → Installed GitHub Apps → Configure přidej tento repozitář.")
+            }
+            if (installations.length() < 100) break
+            page++
+        }
+        throw IOException("GitHub App není nainstalovaná pro účet $owner. V Developer settings → GitHub Apps → Install App ji nainstaluj pro repozitář $owner/$repository; samotné přihlášení nestačí.")
+    }
+
     fun request(path: String, method: String = "GET", token: String? = null, body: String? = null): String {
         val connection = (URL("https://api.github.com/$path").openConnection() as HttpURLConnection).apply {
             requestMethod = method
@@ -39,10 +76,13 @@ internal object GitHubApiClient {
                 val requiredPermissions = connection.getHeaderField("X-Accepted-GitHub-Permissions")
                 val permissionHint = if (
                     code == HttpURLConnection.HTTP_FORBIDDEN &&
-                    requiredPermissions?.contains("contents=write", ignoreCase = true) == true
+                    (detail.contains("Resource not accessible by integration", ignoreCase = true) ||
+                        requiredPermissions?.contains("contents=write", ignoreCase = true) == true) &&
+                    method == "PUT" && path.substringBefore('?').endsWith("/contents/data.enc.json")
                 ) {
                     " GitHub App potřebuje oprávnění repozitáře Contents: Read and write. " +
-                        "Změň ho v nastavení GitHub App, schval změnu oprávnění a potom účet v aplikaci znovu propoj."
+                        "Také musí být nainstalovaná pro tento repozitář. Změň oprávnění v Developer settings → GitHub Apps, " +
+                        "schval změnu v Settings → Applications → Installed GitHub Apps a potom účet v aplikaci znovu propoj."
                 } else ""
                 val permissionInfo = requiredPermissions?.takeIf { it.isNotBlank() }
                     ?.let { " Požadované oprávnění: $it." }.orEmpty()
