@@ -87,6 +87,7 @@ class MainActivity : Activity() {
     private var updateButton: Button? = null
     private var pendingApk: File? = null
     private var updateAsset: JSONObject? = null
+    private var updateReleaseNotes = ""
     private var updateVersion: String? = null
     private var updateProgressDialog: Dialog? = null
     private var updateProgressStatus: TextView? = null
@@ -409,7 +410,7 @@ class MainActivity : Activity() {
         if (local.isFile && local.length() > 0) {
             try {
                 statusView?.text = "Lokální databáze připravená · zadej heslo."
-                askPassword(local.readText(StandardCharsets.UTF_8), preserveBaseline = true)
+                askPassword(local.readText(StandardCharsets.UTF_8), preserveBaseline = true, allowAutoLogin = true)
                 return
             } catch (e: Exception) {
                 statusView?.text = "Lokální databázi se nepodařilo načíst: ${e.message}"
@@ -426,7 +427,7 @@ class MainActivity : Activity() {
                 saveLocalDatabase(raw)
                 runOnUiThread {
                     statusView?.text = "Databáze stažena. Zadej heslo."
-                    askPassword(raw)
+                    askPassword(raw, allowAutoLogin = true)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
@@ -543,6 +544,26 @@ class MainActivity : Activity() {
             toggleDarkMode()
         }
         content.addView(themeButton, margin(0, 0, 0, 10))
+        val autoLogin = CheckBox(this).apply {
+            text = "Automaticky přihlásit při spuštění"
+            setTextColor(ink)
+            isChecked = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).getBoolean("auto_login", true)
+            setOnCheckedChangeListener { _, enabled ->
+                if (enabled) {
+                    try {
+                        val currentPassword = password ?: error("Nejdřív odemkni databázi.")
+                        saveDatabasePassword(currentPassword)
+                    } catch (e: Exception) {
+                        isChecked = false
+                        toast(e.message ?: "Automatické přihlášení se nepodařilo zapnout.")
+                        return@setOnCheckedChangeListener
+                    }
+                }
+                getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putBoolean("auto_login", enabled).apply()
+            }
+        }
+        content.addView(autoLogin, margin(0, 0, 0, 5))
+        content.addView(label("Při spuštění odemkne databázi bezpečně uloženým heslem. Používej jen na vlastním zařízení. Vypnutí zachová uložené heslo pro ruční přihlášení.", 13, muted, false), margin(0, 0, 0, 16))
         content.addView(label("Oznámení", 17, ink, true), margin(0, 4, 0, 5))
         content.addView(label(
             "Pro každý druh položky nastav předstih a čas připomenutí. Vychází z poslední odemčené databáze; Android může doručení posunout.",
@@ -589,7 +610,7 @@ class MainActivity : Activity() {
             alpha = if (isEnabled) 1f else 0.5f
         }, margin(0, 0, 0, 10))
         updateButton = button(if (updateAsset == null) "Zkontrolovat aktualizace aplikace" else "Stáhnout dostupnou aktualizaci") {
-            if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
+            if (updateAsset == null) checkForUpdate(silent = false) else confirmAppUpdate()
         }
         content.addView(updateButton)
         if (hasStoredGithubCredentials()) {
@@ -913,8 +934,10 @@ class MainActivity : Activity() {
         dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun askPassword(raw: String, preserveBaseline: Boolean = false, initialMessage: String = "") {
+    private fun askPassword(raw: String, preserveBaseline: Boolean = false, initialMessage: String = "", allowAutoLogin: Boolean = false) {
         val savedPassword = readSavedDatabasePassword()
+        val shouldAutoLogin = allowAutoLogin && savedPassword != null &&
+            getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).getBoolean("auto_login", true)
         val screen = ScrollView(this).apply {
             isFillViewport = true
             background = GradientDrawable(
@@ -966,10 +989,11 @@ class MainActivity : Activity() {
         card.addView(unlockButton)
         val qrLoginButton = button("Přihlásit se QR kódem") {
             IntentIntegrator(this)
+                .setCaptureActivity(QrScanActivity::class.java)
                 .setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
                 .setPrompt("Naskenuj přihlašovací QR kód Inženýrů")
                 .setBeepEnabled(false)
-                .setOrientationLocked(false)
+                .setOrientationLocked(true)
                 .initiateScan()
         }.apply {
             setTextColor(ink)
@@ -977,7 +1001,7 @@ class MainActivity : Activity() {
         }
         card.addView(qrLoginButton, margin(0, 10, 0, 0))
         updateButton = button(if (updateAsset == null) "Zkontrolovat aktualizace aplikace" else "Stáhnout dostupnou aktualizaci") {
-            if (updateAsset == null) checkForUpdate(silent = false) else downloadUpdate()
+            if (updateAsset == null) checkForUpdate(silent = false) else confirmAppUpdate()
         }
         card.addView(updateButton, margin(0, 10, 0, 0))
         page.addView(label("Verze ${BuildConfig.VERSION_NAME}", 12, muted, false).apply {
@@ -1046,6 +1070,7 @@ class MainActivity : Activity() {
                 true
             } else false
         }
+        if (shouldAutoLogin) unlockButton.performClick()
     }
 
     private fun connectMaintainer() {
@@ -2312,6 +2337,7 @@ class MainActivity : Activity() {
 
     private fun checkForUpdate(silent: Boolean) {
         updateAsset = null
+        updateReleaseNotes = ""
         updateVersion = null
         updateButton?.text = "Zkontrolovat aktualizace aplikace"
         if (!silent) updateButton?.isEnabled = false
@@ -2325,6 +2351,7 @@ class MainActivity : Activity() {
                 if (available != null) {
                     updateAsset = available.second
                     updateVersion = available.first
+                    updateReleaseNotes = available.third
                 }
                 runOnUiThread {
                     updateButton?.isEnabled = true
@@ -2341,6 +2368,8 @@ class MainActivity : Activity() {
                         if (!silent) {
                             setUpdateProgressStep(0, "SUCCESS")
                             finishUpdateProgress("Je dostupná verze ${available.first}.")
+                            updateProgressDialog?.dismiss()
+                            confirmAppUpdate()
                         }
                     }
                 }
@@ -2354,7 +2383,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun fetchLatestUpdate(): Pair<String, JSONObject>? {
+    private fun fetchLatestUpdate(): Triple<String, JSONObject, String>? {
         val release = JSONObject(githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"))
         val tag = release.optString("tag_name").removePrefix("v")
         val current = packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
@@ -2362,7 +2391,28 @@ class MainActivity : Activity() {
         val asset = release.optJSONArray("assets")?.let { assets ->
             (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name") == RELEASE_APK_NAME }
         } ?: throw IOException("Nejnovější release neobsahuje $RELEASE_APK_NAME.")
-        return tag to asset
+        return Triple(tag, asset, release.optString("body", "").trim())
+    }
+
+    private fun confirmAppUpdate() {
+        val version = updateVersion ?: return
+        val (dialog, content) = customDialog("Aktualizace na $version")
+        content.addView(label("Chceš stáhnout a nainstalovat novou verzi aplikace?", 15, muted, false), margin(0, 12, 0, 12))
+        content.addView(label("Co je nového", 17, ink, true))
+        val notes = label("", 15, ink, false).apply {
+            text = formattedText(updateReleaseNotes.ifBlank { "Tato verze nemá na GitHubu uvedený changelog." })
+            setTextIsSelectable(true)
+            movementMethod = android.text.method.LinkMovementMethod.getInstance()
+            setPadding(0, dp(12), 0, dp(12))
+        }
+        content.addView(ScrollView(this).apply { addView(notes) }, LinearLayout.LayoutParams(-1,
+            (resources.displayMetrics.heightPixels / 3).coerceAtMost(dp(280))))
+        content.addView(button("Aktualizovat na $version") {
+            dialog.dismiss()
+            downloadUpdate(version)
+        }, margin(0, 12, 0, 8))
+        content.addView(button("Později") { dialog.dismiss() })
+        showCustomDialog(dialog)
     }
 
     private fun compareVersions(first: String, second: String): Int {
@@ -2375,7 +2425,7 @@ class MainActivity : Activity() {
         return 0
     }
 
-    private fun downloadUpdate() {
+    private fun downloadUpdate(confirmedVersion: String) {
         val saved = readGithubCredentials()
         updateButton?.isEnabled = false
         statusView?.text = "Stahuji aktualizaci…"
@@ -2402,6 +2452,15 @@ class MainActivity : Activity() {
                 val asset = available.second
                 updateAsset = asset
                 updateVersion = version
+                updateReleaseNotes = available.third
+                if (version != confirmedVersion) {
+                    runOnUiThread {
+                        updateProgressDialog?.dismiss()
+                        updateButton?.text = "Stáhnout aktualizaci $version"
+                        confirmAppUpdate()
+                    }
+                    return@execute
+                }
                 runOnUiThread {
                     updateProgressTitles.getOrNull(1)?.let { updateProgressTitles[1] = "Stahuji verzi $version" }
                     updateButton?.text = "Stahuji aktualizaci $version…"
