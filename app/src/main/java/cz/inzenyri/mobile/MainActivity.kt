@@ -1445,9 +1445,8 @@ class MainActivity : Activity() {
             card.addView(solutionButton, margin(0, 10, 0, 0))
             card.addView(solutionText, margin(0, 6, 0, 0))
         }
-        val questions = item.optJSONObject("quiz")?.optJSONArray("questions")
-        if (questions != null && questions.length() > 0) {
-            card.addView(button("Spustit procvičování →") { startQuiz(item) }, margin(0, 8, 0, 0))
+        if (itemType(item) == "test") {
+            card.addView(button("Vybrat procvičování →") { showQuizSelection(item) }, margin(0, 8, 0, 0))
         }
         if (inMaintainerWorkspace && maintainerMode && index != null) {
             val actions = LinearLayout(this).apply {
@@ -1464,18 +1463,129 @@ class MainActivity : Activity() {
         return card
     }
 
-    private fun startQuiz(item: JSONObject) {
-        val questions = item.optJSONObject("quiz")?.optJSONArray("questions") ?: return
+    private fun showQuizSelection(item: JSONObject) {
+        val previousScreen = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) ?: return
+        val previousExit = quizExitAction
+        fun goBack() {
+            quizExitAction = previousExit
+            setContentView(previousScreen)
+        }
+        quizExitAction = ::goBack
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(24))
+            setBackgroundColor(if (darkMode) Color.rgb(24, 23, 39) else Color.rgb(246, 243, 255))
+        }
+        page.addView(button("← Zpět k testům") { goBack() })
+        page.addView(label(item.optString("name"), 26, ink, true), margin(0, 20, 0, 8))
+        page.addView(label("Vyber si, co chceš procvičit. Každý kvíz můžeš spustit samostatně.", 15, muted, false), margin(0, 0, 0, 20))
+        if (maintainerMode && inMaintainerWorkspace) {
+            page.addView(button("＋ Přidat kvíz") {
+                addPracticeQuiz(item) {
+                    goBack()
+                    showQuizSelection(item)
+                }
+            }, margin(0, 0, 0, 16))
+        }
+        val quizzes = PracticeQuizzes.forTest(item)
+        if (quizzes.isEmpty()) {
+            page.addView(label("Pro tento test zatím nejsou připravené žádné kvízy.", 17, muted, false))
+        }
+        quizzes.forEachIndexed { index, quiz ->
+            val title = PracticeQuizzes.title(quiz, index)
+            val count = quiz.optJSONArray("questions")?.length() ?: 0
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(18), dp(18), dp(18), dp(18))
+                background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 22)
+            }
+            card.addView(label(title, 21, ink, true))
+            card.addView(label("Počet otázek: $count", 14, muted, false), margin(0, 6, 0, 12))
+            card.addView(button("Spustit kvíz →") { startQuiz(quiz, title) })
+            page.addView(card, margin(0, 0, 0, 14))
+        }
+        setContentView(ScrollView(this).apply { isFillViewport = true; addView(page) })
+    }
+
+    private fun addPracticeQuiz(item: JSONObject, onSaved: () -> Unit) {
+        val previousScreen = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) ?: return
+        val previousExit = quizExitAction
+        fun cancel() {
+            quizExitAction = previousExit
+            setContentView(previousScreen)
+        }
+        quizExitAction = ::cancel
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(20), dp(20), dp(24))
+            setBackgroundColor(if (darkMode) Color.rgb(24, 23, 39) else Color.rgb(246, 243, 255))
+        }
+        page.addView(button("← Zrušit") { cancel() })
+        page.addView(label("Nový kvíz", 26, ink, true), margin(0, 16, 0, 12))
+        val title = input("Název tématu, např. Sčítání", false)
+        page.addView(title)
+        page.addView(label("Textové otázky. Více uznávaných odpovědí odděl znakem |. Velikost písmen se nerozlišuje.", 14, muted, false), margin(0, 12, 0, 12))
+        val fields = mutableListOf<Pair<EditText, EditText>>()
+        val questions = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        page.addView(questions)
+        fun addQuestion() {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 18)
+            }
+            val prompt = input("Zadání otázky", true)
+            val answers = input("Správná odpověď (varianty odděl |)", false)
+            val pair = prompt to answers
+            fields.add(pair)
+            row.addView(prompt)
+            row.addView(answers, margin(0, 8, 0, 8))
+            row.addView(button("Odebrat otázku") { fields.remove(pair); questions.removeView(row) })
+            questions.addView(row, margin(0, 0, 0, 12))
+        }
+        addQuestion()
+        page.addView(button("＋ Další otázka") { addQuestion() }, margin(0, 0, 0, 12))
+        val shuffle = CheckBox(this).apply { text = "Promíchat otázky"; setTextColor(ink) }
+        page.addView(shuffle)
+        page.addView(button("Uložit kvíz") {
+            if (title.text.toString().isBlank()) { title.error = "Zadej název kvízu"; return@button }
+            if (fields.isEmpty()) { toast("Přidej alespoň jednu otázku."); return@button }
+            val values = JSONArray()
+            for ((prompt, answers) in fields) {
+                val accepted = answers.text.toString().split('|').map { it.trim() }.filter { it.isNotEmpty() }
+                if (prompt.text.toString().isBlank() || accepted.isEmpty()) {
+                    toast("Vyplň zadání i správnou odpověď u každé otázky.")
+                    return@button
+                }
+                values.put(JSONObject().put("type", "text").put("prompt", prompt.text.toString().trim())
+                    .put("answers", JSONArray(accepted)).put("ignoreCase", true))
+            }
+            val quiz = JSONObject().put("id", java.util.UUID.randomUUID().toString())
+                .put("title", title.text.toString().trim()).put("shuffle", shuffle.isChecked).put("questions", values)
+            if (!item.has("quiz")) item.put("quiz", quiz)
+            else item.put("quizzes", (item.optJSONArray("quizzes") ?: JSONArray()).put(quiz))
+            persistLocalDatabase()
+            renderDatabase()
+            cancel()
+            onSaved()
+        }, margin(0, 12, 0, 0))
+        setContentView(ScrollView(this).apply { isFillViewport = true; addView(page) })
+    }
+
+    private fun startQuiz(quiz: JSONObject, title: String) {
+        val questions = quiz.optJSONArray("questions") ?: return
         if (questions.length() == 0) return
         val previousScreen = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) ?: return
+        val previousExit = quizExitAction
         fun returnToItems() {
-            quizExitAction = null
+            quizExitAction = previousExit
             setContentView(previousScreen)
         }
         quizExitAction = ::returnToItems
         var index = 0
         var score = 0
         var questionOrder = (0 until questions.length()).filter { questions.optJSONObject(it) != null }
+        if (quiz.optBoolean("shuffle")) questionOrder = questionOrder.shuffled()
         if (questionOrder.isEmpty()) { returnToItems(); return }
         val failedQuestions = mutableListOf<Int>()
         fun showQuestion() {
@@ -1499,7 +1609,7 @@ class MainActivity : Activity() {
                 setTextColor(ink)
                 background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
             }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(12) })
-            header.addView(label(item.optString("name").ifBlank { "Procvičování" }, 20, ink, true),
+            header.addView(label(title, 20, ink, true),
                 LinearLayout.LayoutParams(0, -2, 1f))
             page.addView(header, margin(0, 0, 0, 16))
 
@@ -1531,12 +1641,13 @@ class MainActivity : Activity() {
                 }
                 result.addView(button("Zkusit znovu") {
                     questionOrder = (0 until questions.length()).filter { questions.optJSONObject(it) != null }
+                    if (quiz.optBoolean("shuffle")) questionOrder = questionOrder.shuffled()
                     failedQuestions.clear()
                     index = 0
                     score = 0
                     showQuestion()
                 })
-                result.addView(button("Zpět k přehledu") { returnToItems() }, margin(0, 10, 0, 0))
+                result.addView(button("Vybrat další kvíz") { returnToItems() }, margin(0, 10, 0, 0))
                 page.addView(ScrollView(this).apply {
                     isFillViewport = true
                     addView(result)

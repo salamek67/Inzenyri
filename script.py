@@ -189,15 +189,17 @@ def normalize(value):
             item_id = item_id.strip()
         item["id"] = item_id
         seen_ids.add(item_id)
-        quiz = item.get("quiz")
-        if not isinstance(quiz, dict):
-            continue
-        questions = quiz.get("questions", [])
-        if not isinstance(questions, list):
-            raise DataError("Pole quiz.questions musí být seznam.")
-        for question in questions:
-            if isinstance(question, dict) and question.get("type") == "binary":
-                question["type"] = "choice"
+        extra_quizzes = item.get("quizzes", [])
+        if not isinstance(extra_quizzes, list) or not all(isinstance(q, dict) for q in extra_quizzes):
+            raise DataError("Pole quizzes musí být seznam kvízů.")
+        quizzes = ([item["quiz"]] if isinstance(item.get("quiz"), dict) else []) + extra_quizzes
+        for quiz in quizzes:
+            questions = quiz.get("questions", [])
+            if not isinstance(questions, list):
+                raise DataError("Pole quiz.questions musí být seznam.")
+            for question in questions:
+                if isinstance(question, dict) and question.get("type") == "binary":
+                    question["type"] = "choice"
     return {"tasks": value["tasks"]}
 
 
@@ -534,9 +536,10 @@ def choose_type(value=None):
     return parse_type(value or ask("Typ [u]kol / [t]est / [a]kce"))
 
 
-def ask_number(prompt, minimum=1, maximum=None):
+def ask_number(prompt, minimum=1, maximum=None, default=None):
     try:
-        value = int(ask(prompt))
+        entered = ask(prompt).strip()
+        value = default if not entered and default is not None else int(entered)
     except ValueError as exc:
         raise DataError("Zadej celé číslo.") from exc
     if value < minimum or maximum is not None and value > maximum:
@@ -641,7 +644,7 @@ def build_practice():
     )
     while True:
         try:
-            count = ask_number("Počet otázek (0 = bez procvičování)", 0, 100)
+            count = ask_number("Počet otázek (Enter nebo 0 = přeskočit)", 0, 100, default=0)
             break
         except DataError as exc:
             cli_error(exc)
@@ -659,6 +662,30 @@ def build_practice():
                 cli_error(exc)
                 warning("Otázka nebyla uložena. Zadej ji znovu.")
     return {"shuffle": shuffle, "questions": questions}
+
+
+def build_practice_sets():
+    quizzes = []
+    while True:
+        title = ask("Název kvízu (např. Sčítání; prázdné = Základní procvičování)").strip()
+        quiz = build_practice()
+        if not quiz:
+            break
+        quiz["id"] = str(uuid.uuid4())
+        quiz["title"] = title or ("Základní procvičování" if not quizzes else f"Kvíz {len(quizzes) + 1}")
+        quizzes.append(quiz)
+        if ask("Přidat k tomuto testu další kvíz? [a/n]").lower() not in {"a", "ano"}:
+            break
+    return quizzes
+
+
+def set_practice_sets(item, quizzes):
+    item.pop("quiz", None)
+    item.pop("quizzes", None)
+    if quizzes:
+        item["quiz"] = quizzes[0]
+        if len(quizzes) > 1:
+            item["quizzes"] = quizzes[1:]
 
 
 def add(type_argument=None):
@@ -685,9 +712,7 @@ def add(type_argument=None):
         "solution": solution,
     }
     if kind == "test":
-        quiz = build_practice()
-        if quiz:
-            item["quiz"] = quiz
+        set_practice_sets(item, build_practice_sets())
     data["tasks"].append(item)
     save(data, password)
     success("Položka byla uložena do privátních dat a zašifrována.")
@@ -812,6 +837,8 @@ def info(index=None):
         print(f"  {muted('Řešení:')} {item['solution']}")
 
     quiz = item.get("quiz")
+    for index, extra in enumerate(item.get("quizzes", []), 2):
+        print(f"  {muted('Další kvíz:')} {extra.get('title') or f'Kvíz {index}'} · {len(extra.get('questions', []))} otázek")
     questions = quiz.get("questions", []) if isinstance(quiz, dict) else []
     if not questions:
         print(f"  {muted('Procvičování:')} —")
@@ -871,24 +898,24 @@ def edit(index=None):
             clearable=True,
         )
 
-    if updated.get("type") == "test" or "quiz" in updated:
+    if updated.get("type") == "test" or "quiz" in updated or "quizzes" in updated:
         while True:
             action = (
-                ask("Procvičování [p]onechat / [u]pravit / [s]mazat").lower() or "p"
+                ask("Kvízy [p]onechat / [a] přidat / [u] nahradit všechny / [s]mazat všechny").lower() or "p"
             )
             if action in {"p", "ponechat"}:
                 break
             if action in {"u", "upravit"}:
-                quiz = build_practice()
-                if quiz:
-                    updated["quiz"] = quiz
-                else:
-                    updated.pop("quiz", None)
+                set_practice_sets(updated, build_practice_sets())
+                break
+            if action in {"a", "pridat", "přidat"}:
+                existing = ([updated["quiz"]] if isinstance(updated.get("quiz"), dict) else []) + updated.get("quizzes", [])
+                set_practice_sets(updated, existing + build_practice_sets())
                 break
             if action in {"s", "smazat"}:
-                updated.pop("quiz", None)
+                set_practice_sets(updated, [])
                 break
-            cli_error("Vyber p, u nebo s.")
+            cli_error("Vyber p, a, u nebo s.")
 
     if updated == target:
         warning("Nebyla provedena žádná změna.")
