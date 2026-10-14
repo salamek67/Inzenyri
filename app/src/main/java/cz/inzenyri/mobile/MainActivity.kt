@@ -131,6 +131,7 @@ class MainActivity : Activity() {
     private var loginPasswordInput: EditText? = null
     private var loginUnlockButton: Button? = null
     private var quizExitAction: (() -> Unit)? = null
+    private var solutionTemplateButton: Button? = null
 
     private val createDocument = registerForActivityResultCompat(102)
 
@@ -380,6 +381,8 @@ class MainActivity : Activity() {
             dateButton = button("Datum · $dateValue") { chooseDate() }.also { addView(it, margin(0, 10, 0, 0)) }
             descriptionInput = input("Popis (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             solutionInput = input("Řešení v Markdownu (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
+            solutionTemplateButton = button("＋ Šablona pracovního sešitu") { showWorksheetTemplate() }
+                .also { addView(it, margin(0, 8, 0, 0)) }
             quizPromptInput = input("Otázka (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             quizAnswersInput = input("Správné odpovědi (odděl |)", false).also { addView(it, margin(0, 8, 0, 0)) }
             clearQuizCheckBox = CheckBox(this@MainActivity).apply {
@@ -1741,6 +1744,37 @@ class MainActivity : Activity() {
         showQuestion()
     }
 
+    private fun showWorksheetTemplate() {
+        if (!maintainerMode) return
+        val target = solutionInput ?: return
+        val (dialog, content) = customDialog("Pracovní sešit")
+        val page = input("Stránka, např. 24", false)
+        val exercises = input("Čísla cvičení, např. 1, 2, 3", false)
+        content.addView(page, margin(0, 0, 0, 8))
+        content.addView(exercises, margin(0, 0, 0, 10))
+        content.addView(label("Pro každé cvičení vloží tučný nadpis a po jednom prázdném řádku místo pro řešení. Dosavadní text zůstane zachovaný.", 14, muted, false))
+        content.addView(button("Vložit šablonu") {
+            val pageValue = page.text.toString().trim()
+            val exerciseValues = exercises.text.toString().split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (!pageValue.matches(Regex("[0-9]+"))) { page.error = "Zadej číslo stránky"; return@button }
+            if (exerciseValues.isEmpty() || exerciseValues.any { !it.matches(Regex("[0-9]+")) }) { exercises.error = "Zadej čísla cvičení oddělená čárkou"; return@button }
+            val template = WorksheetSolutionTemplate.create(pageValue, exerciseValues)
+            val existing = target.text.toString()
+            val separator = if (existing.isBlank()) "" else "\n\n"
+            val prefix = existing.trimEnd() + separator
+            target.setText(prefix + template)
+            val firstAnswer = prefix.length + template.indexOf("\n\n") + 2
+            target.requestFocus()
+            target.setSelection(firstAnswer, firstAnswer + WorksheetSolutionTemplate.PLACEHOLDER.length)
+            dialog.dismiss()
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .showSoftInput(target, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }, margin(0, 14, 0, 0))
+        (content.parent as? ViewGroup)?.removeView(content)
+        dialog.setContentView(ScrollView(this).apply { addView(content) })
+        showCustomDialog(dialog, page)
+    }
+
     private fun customDialog(title: String): Pair<Dialog, LinearLayout> {
         val dialog = Dialog(this)
         val content = LinearLayout(this).apply {
@@ -2813,6 +2847,7 @@ class MainActivity : Activity() {
             button.setTextColor(if (key == type) Color.WHITE else ink)
         }
         solutionInput?.visibility = if (type == "task") View.VISIBLE else View.GONE
+        solutionTemplateButton?.visibility = if (type == "task") View.VISIBLE else View.GONE
         quizPromptInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
         quizAnswersInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
     }
