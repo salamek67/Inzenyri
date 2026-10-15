@@ -29,9 +29,9 @@
         </provider>
         <activity
             android:name=".QrScanActivity"
+            android:theme="@style/QrScanTheme"
             android:exported="false"
-            android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.Material.NoActionBar" />
+            android:screenOrientation="portrait" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

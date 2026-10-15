@@ -16,9 +16,6 @@ class QrScanActivity : CaptureActivity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     override fun initializeContent(): DecoratedBarcodeView {
-        window.statusBarColor = Color.rgb(24, 23, 39)
-        window.navigationBarColor = Color.rgb(24, 23, 39)
-        window.decorView.systemUiVisibility = 0
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(24, 23, 39))

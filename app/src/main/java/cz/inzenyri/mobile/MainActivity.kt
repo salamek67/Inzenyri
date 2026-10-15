@@ -1,6 +1,5 @@
 package cz.inzenyri.mobile
 
-import android.app.Activity
 import android.app.Dialog
 import android.content.Intent
 import android.net.Uri
@@ -31,7 +30,12 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.zxing.EncodeHintType
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.WriterException
-import com.google.zxing.integration.android.IntentIntegrator
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.core.content.pm.PackageInfoCompat
 import com.google.zxing.qrcode.QRCodeWriter
 import org.json.JSONArray
 import org.json.JSONObject
@@ -52,7 +56,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.BadPaddingException
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private val credentialStore by lazy(LazyThreadSafetyMode.NONE) { SecureCredentialStore(this) }
     private val worker = Executors.newSingleThreadExecutor()
     private val networkWorker = Executors.newSingleThreadExecutor()
@@ -97,7 +101,7 @@ class MainActivity : Activity() {
     private var updateProgressCloseButton: Button? = null
     private var updateProgressHeaderCloseButton: Button? = null
     private var updateInstallerLaunched = false
-    private var pendingUpdateVersionCode = -1
+    private var pendingUpdateVersionCode = -1L
     private var maintainerButton: Button? = null
     private var maintainerItemsContainer: LinearLayout? = null
     private var editingItemIndex: Int? = null
@@ -136,10 +140,47 @@ class MainActivity : Activity() {
     private var quizExitAction: (() -> Unit)? = null
     private var solutionTemplateButton: Button? = null
 
-    private val createDocument = registerForActivityResultCompat(102)
+    private val createDocument = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == RESULT_OK && uri != null) {
+            worker.execute {
+                try {
+                    contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
+                        it.write(encryptedOutput())
+                    } ?: error("Soubor se nepodařilo uložit.")
+                    runOnUiThread {
+                        statusView?.text = "Uloženo. Nahraď tímto souborem data.enc.json v projektu."
+                        toast("Zašifrovaná databáze je uložená.")
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread { toast(e.message ?: "Uložení se nezdařilo.") }
+                }
+            }
+        }
+    }
+
+    private val installPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (packageManager.canRequestPackageInstalls()) {
+            setUpdateProgressStep(3, "SUCCESS")
+            installDownloadedApk()
+        } else {
+            failUpdateProgress(3, "Aplikace nemá povolení požádat o instalaci APK.")
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val exitQuiz = quizExitAction
+                if (exitQuiz != null) {
+                    exitQuiz()
+                } else {
+                    isEnabled = false
+                    try { onBackPressedDispatcher.onBackPressed() } finally { isEnabled = true }
+                }
+            }
+        })
         workspaceDir = File(filesDir, "inzenyri").apply {
             if (!exists() && !mkdirs()) throw IOException("Lokální složku aplikace se nepodařilo vytvořit.")
         }
@@ -158,25 +199,24 @@ class MainActivity : Activity() {
         updateReminderButton()
         if (updateInstallerLaunched) {
             updateInstallerLaunched = false
-            val installedVersion = packageManager.getPackageInfo(packageName, 0).versionCode
+            val installedVersion = PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(packageName, 0))
             if (installedVersion >= pendingUpdateVersionCode) {
                 setUpdateProgressStep(4, "SUCCESS")
                 finishUpdateProgress("Aktualizace byla nainstalována.")
             } else {
                 failUpdateProgress(4, "Instalace nebyla dokončena.")
             }
-            pendingUpdateVersionCode = -1
+            pendingUpdateVersionCode = -1L
         }
     }
 
-    @Deprecated("Routes Back to the previous screen while a quiz is open")
-    override fun onBackPressed() {
-        val exitQuiz = quizExitAction
-        if (exitQuiz != null) exitQuiz() else super.onBackPressed()
-    }
-
-    private fun registerForActivityResultCompat(requestCode: Int): (Intent) -> Unit = { intent ->
-        startActivityForResult(intent, requestCode)
+    private val qrScanner = registerForActivityResult(ScanContract()) { result ->
+        val contents = result.contents
+        if (contents.isNullOrBlank()) {
+            statusView?.text = "Skenování QR kódu bylo zrušeno."
+        } else {
+            applyLoginQr(contents)
+        }
     }
 
     private fun toggleDarkMode() {
@@ -241,49 +281,6 @@ class MainActivity : Activity() {
                 }
             } finally {
                 pass.fill('\u0000')
-            }
-        }
-    }
-
-    @Deprecated("Uses document picker callbacks for compatibility with the platform Activity")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == IntentIntegrator.REQUEST_CODE) {
-            val result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
-            val contents = result?.contents
-            if (contents.isNullOrBlank()) {
-                statusView?.text = "Skenování QR kódu bylo zrušeno."
-            } else {
-                applyLoginQr(contents)
-            }
-            return
-        }
-        if (requestCode == 103) {
-            if (android.os.Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()) {
-                setUpdateProgressStep(3, "SUCCESS")
-                installDownloadedApk()
-            } else {
-                failUpdateProgress(3, "Aplikace nemá povolení požádat o instalaci APK.")
-            }
-            return
-        }
-        if (resultCode != RESULT_OK || data?.data == null) return
-        val uri = data.data!!
-        when (requestCode) {
-            102 -> {
-                worker.execute {
-                    try {
-                        contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use {
-                            it.write(encryptedOutput())
-                        } ?: error("Soubor se nepodařilo uložit.")
-                        runOnUiThread {
-                            statusView?.text = "Uloženo. Nahraď tímto souborem data.enc.json v projektu."
-                            toast("Zašifrovaná databáze je uložená.")
-                        }
-                    } catch (e: Exception) {
-                        runOnUiThread { toast(e.message ?: "Uložení se nezdařilo.") }
-                    }
-                }
             }
         }
     }
@@ -592,7 +589,7 @@ class MainActivity : Activity() {
                     toast("Povol oznámení v Androidu a potom zapni připomínky.")
                 } else {
                     getSharedPreferences("reminders", MODE_PRIVATE).edit().putBoolean("permission_requested", true).apply()
-                    requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 104)
+                    reminderPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                 }
             } else if (!ReminderNotifications.allowed(this)) {
                 startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
@@ -718,15 +715,13 @@ class MainActivity : Activity() {
         dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 105) {
-            if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) sendTestNotification()
-            else toast("Testovací oznámení potřebuje povolení v Androidu.")
-            return
-        }
-        if (requestCode != 104) return
-        if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+    private val testNotificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) sendTestNotification()
+        else toast("Testovací oznámení potřebuje povolení v Androidu.")
+    }
+
+    private val reminderPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
             ReminderNotifications.setEnabled(this, true)
             database?.let { ReminderNotifications.sync(this, it, doneItems()) }
             toast("Připomínky jsou zapnuté.")
@@ -745,7 +740,7 @@ class MainActivity : Activity() {
                 toast("Povol oznámení a potom pošli test znovu.")
             } else {
                 getSharedPreferences("reminders", MODE_PRIVATE).edit().putBoolean("permission_requested", true).apply()
-                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 105)
+                testNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
             }
         } else if (ReminderNotifications.sendTest(this)) {
             toast("Testovací oznámení odesláno.")
@@ -1003,13 +998,13 @@ class MainActivity : Activity() {
         loginUnlockButton = unlockButton
         card.addView(unlockButton)
         val qrLoginButton = button("Přihlásit se QR kódem") {
-            IntentIntegrator(this)
+            qrScanner.launch(ScanOptions()
                 .setCaptureActivity(QrScanActivity::class.java)
-                .setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
+                .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
                 .setPrompt("Naskenuj přihlašovací QR kód Inženýrů")
                 .setBeepEnabled(false)
                 .setOrientationLocked(true)
-                .initiateScan()
+            )
         }.apply {
             setTextColor(ink)
             background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.rgb(243, 241, 250), 14)
@@ -1995,9 +1990,9 @@ class MainActivity : Activity() {
         val firstQuestion = item.optJSONObject("quiz")?.optJSONArray("questions")?.optJSONObject(0)
         val simpleTextQuestion = firstQuestion?.optString("type") == "text"
         originalQuizIsSimpleText = simpleTextQuestion
-        originalQuizPrompt = if (simpleTextQuestion) firstQuestion?.optString("prompt").orEmpty() else ""
+        originalQuizPrompt = if (simpleTextQuestion) firstQuestion.optString("prompt") else ""
         originalQuizAnswers = if (simpleTextQuestion) {
-            firstQuestion?.optJSONArray("answers")?.let { answers ->
+            firstQuestion.optJSONArray("answers")?.let { answers ->
                 (0 until answers.length()).joinToString(" | ") { answers.optString(it) }
             }.orEmpty()
         } else ""
@@ -2177,7 +2172,7 @@ class MainActivity : Activity() {
             type = "application/json"
             putExtra(Intent.EXTRA_TITLE, "data.enc.json")
         }
-        createDocument(intent)
+        createDocument.launch(intent)
     }
 
     private fun pushToOrigin() {
@@ -2748,10 +2743,10 @@ class MainActivity : Activity() {
                 }
                 val info = packageManager.getPackageArchiveInfo(file.absolutePath, 0) ?: error("Stažený soubor není platný APK.")
                 require(info.packageName == packageName) { "APK nepatří této aplikaci." }
-                val installedVersion = packageManager.getPackageInfo(packageName, 0).versionCode
-                require(info.versionCode > installedVersion) { "Release neobsahuje novější verzi." }
+                val installedVersion = PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(packageName, 0))
+                require(PackageInfoCompat.getLongVersionCode(info) > installedVersion) { "Release neobsahuje novější verzi." }
                 pendingApk = file
-                pendingUpdateVersionCode = info.versionCode
+                pendingUpdateVersionCode = PackageInfoCompat.getLongVersionCode(info)
                 activeStep = 3
                 runOnUiThread {
                     setUpdateProgressStep(2, "SUCCESS")
@@ -2759,9 +2754,8 @@ class MainActivity : Activity() {
                     statusView?.text = "Žádám Android o povolení instalace…"
                     try {
                         if (android.os.Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-                            startActivityForResult(
-                                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")),
-                                103
+                            installPermission.launch(
+                                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
                             )
                         } else {
                             setUpdateProgressStep(3, "SUCCESS")

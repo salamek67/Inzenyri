@@ -38,6 +38,10 @@ jobs:
     needs: commit-policy
     if: ${{ github.event_name != 'release' && needs.commit-policy.outputs.skip_app != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -59,7 +63,6 @@ jobs:
       - name: Install Android platform
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
-        working-directory: app
         env:
           GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
         run: |
@@ -69,7 +72,6 @@ jobs:
           fi
           gradle assembleDebug -PgithubAppClientId="$GH_APP_CLIENT_ID"
       - name: Prepare debug APK artifact
-        working-directory: app
         run: |
           apk_path="$(find . -type f -path '*/outputs/apk/debug/*.apk' -print -quit)"
           if [ -z "$apk_path" ]; then
@@ -89,6 +91,10 @@ jobs:
     needs: commit-policy
     if: ${{ github.event_name == 'release' && needs.commit-policy.outputs.skip_app != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -123,7 +129,6 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/inzenyri-release.jks"
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/inzenyri-release.jks" >> "$GITHUB_ENV"
       - name: Build signed release APK
-        working-directory: app
         env:
           GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}

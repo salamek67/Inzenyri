@@ -8,3 +8,6 @@ data.private.json
 .inzenyri-password
 .inzenyri-password.*.tmp
 .venv/
+
+# Local plaintext database and credentials
+/private/

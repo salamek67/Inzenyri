@@ -48,6 +48,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("androidx.activity:activity:1.9.3")
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:inline-parser:4.6.2")
     implementation("io.noties.markwon:ext-latex:4.6.2")

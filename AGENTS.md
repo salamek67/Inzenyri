@@ -18,3 +18,11 @@
 - Verzi aplikace ani webu neposouvej, pokud to uživatel výslovně nepožádal nebo to není nezbytná součást zadaného výsledku.
 - U Android rozhraní zachovávej vlastní vizuální styl aplikace a používej její vlastní dialogy a průběhové obrazovky tam, kde uživatel interaguje s aplikací. Systémová obrazovka je vhodná pro kroky, které musí provést Android, například instalaci APK nebo oprávnění.
 - Funkce, které dávají smysl na webu i v Android aplikaci a lze je na obou platformách realizovat, implementuj na obou. Zachovej společný formát dat a kompatibilitu starších položek; omezení platformy pojmenuj.
+
+## Struktura projektu
+
+- `web/` obsahuje pouze veřejný web; vlastní JavaScript je v `web/js/`, styly v `web/css/`, ikony v `web/icons/` a externí knihovny v `web/vendor/`. Service worker zůstává v `web/sw.js` kvůli rozsahu působnosti.
+- `scripts/script.py` je správce DB, kořenový `script.py` zachovává původní spouštěcí příkaz. Python závislosti jsou v `scripts/requirements.txt`.
+- `private/` obsahuje pouze ignorované lokální nešifrované údaje a heslo. Nikdy jej nestaguj ani nenahrávej jako artefakt.
+- `data.enc.json` zůstává v kořeni kvůli kompatibilitě nainstalovaných aplikací. Pages workflow publikuje pouze obsah `web/` a tento šifrovaný soubor.
+- Android zůstává v `app/`, dokumentace je v `docs/`. Při přesunech oprav odkazy, service worker i pravidla commitování v Python správci.

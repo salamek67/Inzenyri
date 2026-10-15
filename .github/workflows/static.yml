@@ -59,13 +59,50 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check web JavaScript syntax
+        run: |
+          for source in web/js/*.js web/sw.js; do
+            node --check "$source"
+          done
+      - name: Check public asset paths
+        run: |
+          python3 - <<'PYTHON'
+          import re
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          web = Path("web")
+          html = (web / "index.html").read_text(encoding="utf-8")
+          paths = []
+          for reference in re.findall(r'(?:src|href)="([^"]+)"', html):
+              url = urlsplit(reference)
+              if not url.scheme and not url.netloc and url.path:
+                  paths.append(url.path)
+          worker = (web / "sw.js").read_text(encoding="utf-8")
+          assets = re.search(r"const assetPaths = \[(.*?)\];", worker, re.S)
+          if assets is None:
+              raise SystemExit("Service worker asset list is missing")
+          paths.extend(re.findall(r'"([^"]+)"', assets[1]))
+          for path in paths:
+              target = (web / path).resolve()
+              if not target.is_relative_to(web.resolve()) or not target.exists():
+                  raise SystemExit(f"Missing or invalid public asset: {path}")
+          if not Path("data.enc.json").is_file():
+              raise SystemExit("Encrypted database is missing")
+          PYTHON
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      - name: Prepare public website
+        run: |
+          mkdir -p "$RUNNER_TEMP/inzenyri-pages"
+          cp -R web/. "$RUNNER_TEMP/inzenyri-pages/"
+          cp data.enc.json "$RUNNER_TEMP/inzenyri-pages/data.enc.json"
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: "."
+          path: ${{ runner.temp }}/inzenyri-pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
