@@ -15,7 +15,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = providers.gradleProperty("appVersionCode").orElse("1").get().toInt()
-        versionName = providers.gradleProperty("appVersionName").orElse("1.2.0").get()
+        versionName = providers.gradleProperty("appVersionName").orElse("2.0.0").get()
         buildConfigField("String", "GITHUB_APP_CLIENT_ID", "\"$githubAppClientId\"")
     }
 
@@ -48,6 +48,10 @@ kotlin {
 }
 
 dependencies {
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:inline-parser:4.6.2")
+    implementation("io.noties.markwon:ext-latex:4.6.2")
+    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

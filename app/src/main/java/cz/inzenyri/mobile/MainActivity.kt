@@ -11,11 +11,6 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
-import android.text.Spannable
-import android.text.SpannableStringBuilder
-import android.text.style.StyleSpan
-import android.text.style.TypefaceSpan
-import android.text.style.URLSpan
 import android.text.method.LinkMovementMethod
 import android.view.Gravity
 import android.view.View
@@ -33,6 +28,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.google.zxing.EncodeHintType
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.WriterException
 import com.google.zxing.integration.android.IntentIntegrator
@@ -78,6 +74,9 @@ class MainActivity : Activity() {
     private var titleInput: EditText? = null
     private var descriptionInput: EditText? = null
     private var solutionInput: EditText? = null
+    private var aiReviewEditor: LinearLayout? = null
+    private val selectedAiReviews = linkedSetOf<String>()
+    private val aiReviewNames = linkedMapOf("chatgpt" to "ChatGPT", "claude" to "Claude", "gemini" to "Gemini", "deepseek" to "DeepSeek")
     private var quizPromptInput: EditText? = null
     private var quizAnswersInput: EditText? = null
     private var dateButton: Button? = null
@@ -90,6 +89,7 @@ class MainActivity : Activity() {
     private var updateReleaseNotes = ""
     private var updateVersion: String? = null
     private var updateProgressDialog: Dialog? = null
+    private var databaseQrDialog: Dialog? = null
     private var updateProgressStatus: TextView? = null
     private var updateProgressSpinner: ProgressBar? = null
     private var updateProgressRows = mutableListOf<TextView>()
@@ -130,6 +130,9 @@ class MainActivity : Activity() {
     private var githubLoginStepViews = mutableListOf<TextView>()
     private var loginPasswordInput: EditText? = null
     private var loginUnlockButton: Button? = null
+    private val carouselAnchors = mutableMapOf<String, CarouselAnchor>()
+    private val quizProgress by lazy { QuizProgressStore(this) }
+    private val richText by lazy { RichTextRenderer(this) }
     private var quizExitAction: (() -> Unit)? = null
     private var solutionTemplateButton: Button? = null
 
@@ -292,7 +295,7 @@ class MainActivity : Activity() {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
-                else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255))
+                else intArrayOf(Color.rgb(248, 247, 251), Color.rgb(248, 247, 251))
             )
         }
         val scroller = ScrollView(this).apply { addView(page) }
@@ -309,7 +312,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        topBar.addView(label("INŽENÝŘI", 13, purple, true), LinearLayout.LayoutParams(0, -2, 1f))
+        topBar.addView(label("ŠKOLNÍ PŘEHLED", 11, muted, true), LinearLayout.LayoutParams(0, -2, 1f))
         val settingsButton = Button(this).apply {
             text = "⚙"
             contentDescription = "Nastavení"
@@ -351,6 +354,8 @@ class MainActivity : Activity() {
         }
         topBar.addView(maintainerButton)
         page.addView(topBar)
+        page.addView(label("Inženýři", 32, ink, true), margin(0, 16, 0, 6))
+        page.addView(label("Testy, úkoly a akce. Všechno na jednom místě.", 15, muted, false), margin(0, 0, 0, 20))
         page.addView(label("Přehled", 30, ink, true), margin(0, 4, 0, 4))
         page.addView(label("Testy, úkoly a akce na jednom místě.", 15, muted, false), margin(0, 0, 0, 16))
         calendarContainer = LinearLayout(this).apply {
@@ -383,6 +388,10 @@ class MainActivity : Activity() {
             solutionInput = input("Řešení v Markdownu (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             solutionTemplateButton = button("＋ Šablona pracovního sešitu") { showWorksheetTemplate() }
                 .also { addView(it, margin(0, 8, 0, 0)) }
+            aiReviewEditor = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+            }.also { addView(it, margin(0, 10, 0, 0)) }
+            renderAiReviewEditor()
             quizPromptInput = input("Otázka (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             quizAnswersInput = input("Správné odpovědi (odděl |)", false).also { addView(it, margin(0, 8, 0, 0)) }
             clearQuizCheckBox = CheckBox(this@MainActivity).apply {
@@ -747,6 +756,7 @@ class MainActivity : Activity() {
     }
 
     private fun showDatabaseLoginQr() {
+        databaseQrDialog?.dismiss()
         val secret = password?.clone() ?: return toast("Nejdřív odemkni databázi.")
         var bitmap: Bitmap? = null
         try {
@@ -757,7 +767,7 @@ class MainActivity : Activity() {
                 .put("password", String(secret))
                 .toString()
             val size = 720
-            val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, size, size)
+            val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, size, size, mapOf(EncodeHintType.CHARACTER_SET to "UTF-8"))
             val pixels = IntArray(size * size) { index ->
                 val x = index % size
                 val y = index / size
@@ -799,12 +809,14 @@ class MainActivity : Activity() {
         dialog.setContentView(content)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.setOnDismissListener {
+            if (databaseQrDialog === dialog) databaseQrDialog = null
             image.setImageDrawable(null)
             bitmap?.recycle()
             bitmap = null
         }
-        dialog.show()
         dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        databaseQrDialog = dialog
+        dialog.show()
         dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(380)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
@@ -836,7 +848,7 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(20), dp(20), dp(24))
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
-                else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255)))
+                else intArrayOf(Color.rgb(248, 247, 251), Color.rgb(248, 247, 251)))
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         header.addView(button("← Zpět") { showDashboard() }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(12) })
@@ -946,7 +958,7 @@ class MainActivity : Activity() {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
-                else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255))
+                else intArrayOf(Color.rgb(248, 247, 251), Color.rgb(248, 247, 251))
             )
         }
         val page = LinearLayout(this).apply {
@@ -1352,7 +1364,7 @@ class MainActivity : Activity() {
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(4))
-            background = rounded(if (darkMode) Color.rgb(29, 29, 44) else Color.rgb(232, 231, 240), 22)
+            background = rounded(if (darkMode) Color.rgb(29, 29, 44) else Color.rgb(249, 248, 252), 22)
         }
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1373,7 +1385,16 @@ class MainActivity : Activity() {
             background = rounded(if (darkMode) Color.rgb(48, 43, 69) else Color.rgb(241, 237, 255), 99)
         })
         section.addView(heading)
-        entries.forEach { (item, index, _) -> section.addView(itemCard(item, index), margin(0, 0, 0, 8)) }
+        if (inMaintainerWorkspace) {
+            entries.forEach { (item, index, _) -> section.addView(itemCard(item, index), margin(0, 0, 0, 8)) }
+        } else {
+            val cardWidth = (resources.displayMetrics.widthPixels - dp(if (entries.size > 1) 96 else 64))
+                .coerceAtMost(dp(380)).coerceAtLeast(dp(180))
+            section.addView(LoopingCardCarousel(this, entries.map { itemKey(it.first) },
+                carouselAnchors[title], cardWidth, ink, muted, darkMode,
+                { carouselAnchors[title] = it },
+                { position -> itemCard(entries[position].first, entries[position].second) }))
+        }
         container.addView(section, margin(0, 14, 0, 0))
     }
 
@@ -1387,7 +1408,7 @@ class MainActivity : Activity() {
                 darkMode -> Color.rgb(35, 35, 53)
                 completed -> Color.rgb(240, 239, 245)
                 else -> Color.WHITE
-            }, 18)
+            }, 22).apply { setStroke(dp(1), if (darkMode) Color.rgb(55, 53, 73) else Color.rgb(233, 230, 240)) }
         }
         val heading = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val checkbox = TextView(this).apply {
@@ -1396,16 +1417,24 @@ class MainActivity : Activity() {
             isSelected = completed
             text = if (completed) "✓" else ""
             setTextColor(if (completed) Color.WHITE else muted)
-            background = rounded(if (completed) purple else if (darkMode) Color.rgb(62, 61, 78) else Color.WHITE, 9)
+            background = rounded(if (completed) purple else if (darkMode) Color.rgb(62, 61, 78) else Color.WHITE, 9).apply {
+                if (!completed) setStroke(dp(2), if (darkMode) Color.rgb(132, 127, 153) else Color.rgb(177, 169, 200))
+            }
             contentDescription = if (completed) "Vrátit mezi aktivní" else "Označit jako dokončené"
             isClickable = true
             isFocusable = true
             setOnClickListener {
+                isClickable = false
                 val checked = !isSelected
-                val values = doneItems()
-                if (checked) values.add(itemKey(item)) else values.remove(itemKey(item))
-                getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, values).apply()
-                renderDatabase()
+                val scroll = swipeRefreshLayout?.getChildAt(0) as? ScrollView
+                val previousY = scroll?.scrollY ?: 0
+                card.animate().alpha(0f).scaleX(0.96f).scaleY(0.96f).setDuration(160).withEndAction {
+                    val values = doneItems()
+                    if (checked) values.add(itemKey(item)) else values.remove(itemKey(item))
+                    getSharedPreferences(ITEM_PREFS, MODE_PRIVATE).edit().putStringSet(DONE_ITEMS_KEY, values).apply()
+                    renderDatabase()
+                    scroll?.post { scroll.scrollTo(0, previousY) }
+                }.start()
             }
         }.also { it.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(12) } }
         val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -1422,7 +1451,7 @@ class MainActivity : Activity() {
         val description = item.optString("task").trim()
         if (description.isNotEmpty()) {
             val body = label(description, 15, ink, false).apply {
-                text = formattedText(description)
+                richText.setText(this, description)
                 setLineSpacing(dp(2).toFloat(), 1f)
                 linksClickable = true
                 movementMethod = LinkMovementMethod.getInstance()
@@ -1432,21 +1461,45 @@ class MainActivity : Activity() {
         val solution = item.optString("solution").trim()
         if (solution.isNotEmpty()) {
             var visible = false
+            val solutionContent = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+            }
             val solutionText = label(solution, 14, muted, false).apply {
-                text = formattedText(solution)
+                richText.setText(this, solution)
                 linksClickable = true
                 movementMethod = LinkMovementMethod.getInstance()
-                visibility = View.GONE
+            }
+            solutionContent.addView(solutionText)
+            if (itemType(item) == "task") {
+                val reviews = item.optJSONArray("aiReviews")
+                val names = aiReviewNames.filterKeys { key ->
+                    reviews != null && (0 until reviews.length()).any { reviews.optString(it) == key }
+                }.values
+                if (names.isNotEmpty()) {
+                    solutionContent.addView(label("AI kontrola", 12, muted, false), margin(0, 10, 0, 0))
+                    names.toList().chunked(2).forEach { pair ->
+                        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                        pair.forEach { name ->
+                            row.addView(label(name, 12, if (darkMode) Color.rgb(226, 226, 232) else Color.rgb(84, 84, 94), true).apply {
+                                contentDescription = "Maintainer označil úkol jako zkontrolovaný přes $name"
+                                setPadding(dp(10), dp(7), dp(10), dp(7))
+                                background = rounded(if (darkMode) Color.rgb(63, 63, 73) else Color.rgb(243, 243, 247), 50)
+                            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) })
+                        }
+                        solutionContent.addView(row, margin(0, 5, 0, 0))
+                    }
+                }
             }
             val initialLabel = if (itemType(item) == "test") "Zobrazit procvičování" else "Zobrazit řešení"
             val solutionButton = button(initialLabel) { }
             solutionButton.setOnClickListener {
                 visible = !visible
-                solutionText.visibility = if (visible) View.VISIBLE else View.GONE
+                solutionContent.visibility = if (visible) View.VISIBLE else View.GONE
                 solutionButton.text = if (visible) "Skrýt" else initialLabel
             }
             card.addView(solutionButton, margin(0, 10, 0, 0))
-            card.addView(solutionText, margin(0, 6, 0, 0))
+            card.addView(solutionContent, margin(0, 6, 0, 0))
         }
         if (itemType(item) == "test") {
             card.addView(button("Vybrat procvičování →") { showQuizSelection(item) }, margin(0, 8, 0, 0))
@@ -1496,15 +1549,24 @@ class MainActivity : Activity() {
         }
         quizzes.forEachIndexed { index, quiz ->
             val title = PracticeQuizzes.title(quiz, index)
-            val count = quiz.optJSONArray("questions")?.length() ?: 0
+            val count = PracticeQuizzes.questions(quiz).size
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(18), dp(18), dp(18), dp(18))
                 background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 22)
             }
             card.addView(label(title, 21, ink, true))
-            card.addView(label("Počet otázek: $count", 14, muted, false), margin(0, 6, 0, 12))
-            card.addView(button("Spustit kvíz →") { startQuiz(quiz, title) })
+            val progress = quizProgress.read(quizProgress.identity(item, quiz, index))
+            if (progress?.complete == true) {
+                card.addView(ProgressRingView(this, progress.percent, purple,
+                    if (darkMode) Color.rgb(58, 53, 77) else Color.rgb(232, 226, 248)),
+                    LinearLayout.LayoutParams(dp(88), dp(88)).apply { topMargin = dp(12); bottomMargin = dp(12) })
+            } else {
+                card.addView(label("${progress?.answered ?: 0}/$count zodpovězeno", 17, purple, true), margin(0, 12, 0, 12))
+            }
+            val action = if (progress != null && progress.cursor < progress.order.size) "Pokračovat →"
+                else if (progress?.complete == true) "Zobrazit výsledek" else if (progress != null) "Pokračovat →" else "Spustit kvíz →"
+            card.addView(button(action) { startQuiz(item, quiz, index, title) })
             page.addView(card, margin(0, 0, 0, 14))
         }
         setContentView(ScrollView(this).apply { isFillViewport = true; addView(page) })
@@ -1575,22 +1637,29 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply { isFillViewport = true; addView(page) })
     }
 
-    private fun startQuiz(quiz: JSONObject, title: String) {
-        val questions = quiz.optJSONArray("questions") ?: return
+    private fun startQuiz(item: JSONObject, quiz: JSONObject, quizIndex: Int, title: String) {
+        val questions = JSONArray(PracticeQuizzes.questions(quiz))
         if (questions.length() == 0) return
         val previousScreen = findViewById<ViewGroup>(android.R.id.content).getChildAt(0) ?: return
         val previousExit = quizExitAction
         fun returnToItems() {
             quizExitAction = previousExit
-            setContentView(previousScreen)
+            if (previousExit != null) previousExit() else setContentView(previousScreen)
+            showQuizSelection(item)
         }
         quizExitAction = ::returnToItems
-        var index = 0
-        var score = 0
-        var questionOrder = (0 until questions.length()).filter { questions.optJSONObject(it) != null }
-        if (quiz.optBoolean("shuffle")) questionOrder = questionOrder.shuffled()
+        val identity = quizProgress.identity(item, quiz, quizIndex)
+        val attempt = quizProgress.resume(identity, quiz.optBoolean("shuffle"))
+        var index = attempt.cursor
+        var score = attempt.roundScore
+        var questionOrder = attempt.order
         if (questionOrder.isEmpty()) { returnToItems(); return }
-        val failedQuestions = mutableListOf<Int>()
+        val failedQuestions = attempt.failed.toMutableList()
+        fun saveProgress(cursor: Int) {
+            attempt.order = questionOrder
+            attempt.cursor = cursor
+            quizProgress.write(identity, attempt)
+        }
         fun showQuestion() {
             val isComplete = index >= questionOrder.size
             val page = LinearLayout(this).apply {
@@ -1599,7 +1668,7 @@ class MainActivity : Activity() {
                 background = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
                     if (darkMode) intArrayOf(Color.rgb(24, 23, 39), Color.rgb(17, 20, 31))
-                    else intArrayOf(Color.rgb(246, 243, 255), Color.rgb(239, 245, 255))
+                    else intArrayOf(Color.rgb(248, 247, 251), Color.rgb(248, 247, 251))
                 )
             }
             val header = LinearLayout(this).apply {
@@ -1626,19 +1695,23 @@ class MainActivity : Activity() {
                 result.addView(label("Procvičování dokončeno", 25, ink, true).apply {
                     gravity = Gravity.CENTER
                 }, margin(0, 0, 0, 20))
-                result.addView(label("$score / ${questionOrder.size}", 56, purple, true).apply {
-                    gravity = Gravity.CENTER
-                }, margin(0, 0, 0, 6))
-                val percent = score * 100 / questionOrder.size
-                result.addView(label("Správně $percent % odpovědí", 15, muted, false).apply {
-                    gravity = Gravity.CENTER
-                }, margin(0, 0, 0, 26))
-                if (failedQuestions.isNotEmpty()) {
-                    result.addView(button("Zopakovat chybné a přeskočené (${failedQuestions.size})") {
-                        questionOrder = failedQuestions.toList()
+                if (attempt.complete) {
+                    result.addView(ProgressRingView(this, attempt.percent, purple,
+                        if (darkMode) Color.rgb(58, 53, 77) else Color.rgb(232, 226, 248)),
+                        LinearLayout.LayoutParams(dp(152), dp(152)).apply { bottomMargin = dp(16) })
+                } else {
+                    result.addView(label("${attempt.answered}/${identity.size}", 42, purple, true), margin(0, 0, 0, 12))
+                    result.addView(label("Přeskočené otázky můžeš doplnit při pokračování.", 15, muted, false), margin(0, 0, 0, 12))
+                }
+                result.addView(label("Toto kolo: $score / ${questionOrder.size} správně", 16, muted, false), margin(0, 0, 0, 20))
+                val remaining = attempt.answers.indices.filter { attempt.answers[it] != 1 }
+                if (remaining.isNotEmpty()) {
+                    result.addView(button("Zopakovat chybné a přeskočené (${remaining.size})") {
+                        questionOrder = remaining
                         failedQuestions.clear()
                         index = 0
                         score = 0
+                        saveProgress(0)
                         showQuestion()
                     }, margin(0, 0, 0, 10))
                 }
@@ -1648,6 +1721,8 @@ class MainActivity : Activity() {
                     failedQuestions.clear()
                     index = 0
                     score = 0
+                    attempt.answers.indices.forEach { attempt.answers[it] = -1 }
+                    saveProgress(0)
                     showQuestion()
                 })
                 result.addView(button("Vybrat další kvíz") { returnToItems() }, margin(0, 10, 0, 0))
@@ -1676,7 +1751,7 @@ class MainActivity : Activity() {
                 setPadding(dp(18), dp(20), dp(18), dp(20))
                 background = rounded(if (darkMode) Color.rgb(35, 35, 53) else Color.WHITE, 22)
             }
-            body.addView(label(prompt, 21, ink, true), margin(0, 0, 0, 18))
+            body.addView(label("", 21, ink, true).apply { richText.setText(this, prompt) }, margin(0, 0, 0, 18))
             val bodyScroll = ScrollView(this).apply {
                 isFillViewport = true
                 addView(body)
@@ -1686,14 +1761,58 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
+            var answered = false
+            fun showFeedback(correct: Boolean) {
+                if (answered) return
+                answered = true
+                currentFocus?.windowToken?.let { token ->
+                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                        .hideSoftInputFromWindow(token, 0)
+                }
+                if (correct) score++ else failedQuestions.add(questionIndex)
+                attempt.answers[questionIndex] = if (correct) 1 else 0
+                saveProgress(index + 1)
+                fun disable(view: View) {
+                    view.isEnabled = false
+                    if (view is ViewGroup) for (i in 0 until view.childCount) disable(view.getChildAt(i))
+                }
+                disable(body)
+                footer.removeAllViews()
+                val correctAnswer = if (kind == "choice") {
+                    question.optJSONArray("options")?.optString(question.optInt("answer", -1)).orEmpty()
+                } else {
+                    question.optJSONArray("answers")?.let { answers ->
+                        (0 until answers.length()).joinToString(" / ") { answers.optString(it) }
+                    } ?: question.optString("answer")
+                }
+                val feedback = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(14), dp(14), dp(14), dp(14))
+                    background = rounded(if (darkMode) Color.rgb(40, 39, 56) else Color.rgb(246, 245, 250), 16)
+                }
+                feedback.addView(label(if (correct) "✓ Správně" else "Zkusíme to příště", 18,
+                    if (correct) (if (darkMode) Color.rgb(126, 220, 169) else Color.rgb(31, 126, 80)) else ink, true))
+                if (!correct) feedback.addView(label("", 16, ink, false).apply {
+                    richText.setText(this, "Správná odpověď: $correctAnswer")
+                }, margin(0, 8, 0, 0))
+                question.optString("explanation").takeIf { it.isNotBlank() }?.let { explanation ->
+                    feedback.addView(label("", 15, muted, false).apply { richText.setText(this, explanation) }, margin(0, 8, 0, 0))
+                }
+                body.addView(feedback, margin(0, 16, 0, 0))
+                footer.addView(button(if (index + 1 == questionOrder.size) "Zobrazit výsledek" else "Další otázka") {
+                    index++
+                    showQuestion()
+                }, LinearLayout.LayoutParams(-1, -2))
+                bodyScroll.post { bodyScroll.fullScroll(View.FOCUS_DOWN) }
+            }
             if (kind == "choice") {
                 val options = question.optJSONArray("options") ?: JSONArray()
                 for (selected in 0 until options.length()) {
-                    body.addView(button(options.optString(selected)) {
-                        if (selected == question.optInt("answer", -1)) score++ else failedQuestions.add(questionIndex)
-                        index++
-                        showQuestion()
+                    body.addView(button("") {
+                        showFeedback(selected == question.optInt("answer", -1))
                     }.apply {
+                        setTextColor(ink)
+                        richText.setText(this, options.optString(selected))
                         gravity = Gravity.CENTER_VERTICAL or Gravity.START
                         setPadding(dp(16), dp(12), dp(16), dp(12))
                         minHeight = dp(54)
@@ -1716,6 +1835,7 @@ class MainActivity : Activity() {
                 footer.addView(button("Vyhodnotit") {
                     val answers = question.optJSONArray("answers") ?: JSONArray().put(question.optString("answer"))
                     val input = field.text.toString().trim()
+                    if (input.isBlank()) { field.error = "Napiš odpověď"; return@button }
                     val accepted = (0 until answers.length()).any { answerIndex ->
                         fun normalized(value: String): String {
                             var result = value.trim()
@@ -1725,13 +1845,13 @@ class MainActivity : Activity() {
                         }
                         normalized(input) == normalized(answers.optString(answerIndex))
                     }
-                    if (accepted) score++ else failedQuestions.add(questionIndex)
-                    index++
-                    showQuestion()
+                    showFeedback(accepted)
                 }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
             }
             footer.addView(button("Přeskočit") {
                 failedQuestions.add(questionIndex)
+                attempt.answers[questionIndex] = 2
+                saveProgress(index + 1)
                 index++
                 showQuestion()
             }.apply {
@@ -1811,35 +1931,28 @@ class MainActivity : Activity() {
 
     private fun itemType(item: JSONObject): String = DatabaseRecords.type(item)
 
-    private fun formattedText(value: String): CharSequence {
-        val pattern = Regex("""\[([^\]]+)]\((https?://[^)\s]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`""")
-        val output = SpannableStringBuilder()
-        var cursor = 0
-        for (match in pattern.findAll(value)) {
-            output.append(value.substring(cursor, match.range.first))
-            val start = output.length
-            val linkLabel = match.groups[1]?.value
-            val replacement = linkLabel ?: match.groups[3]?.value ?: match.groups[4]?.value ?: match.groups[5]?.value.orEmpty()
-            output.append(replacement)
-            val end = output.length
-            when {
-                linkLabel != null -> output.setSpan(URLSpan(match.groups[2]!!.value), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                match.groups[3] != null -> output.setSpan(StyleSpan(Typeface.BOLD), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                match.groups[4] != null -> output.setSpan(StyleSpan(Typeface.ITALIC), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                match.groups[5] != null -> output.setSpan(TypefaceSpan("monospace"), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            cursor = match.range.last + 1
-        }
-        output.append(value.substring(cursor))
-        return output
-    }
-
     private fun itemKey(item: JSONObject): String = DatabaseRecords.key(item)
 
     private fun doneItems(): MutableSet<String> = getSharedPreferences(ITEM_PREFS, MODE_PRIVATE)
         .getStringSet(DONE_ITEMS_KEY, emptySet())?.toMutableSet() ?: mutableSetOf()
 
+    private fun renderAiReviewEditor() {
+        val editor = aiReviewEditor ?: return
+        editor.removeAllViews()
+        editor.addView(label("AI kontrola · označí maintainer", 14, ink, true))
+        aiReviewNames.forEach { (key, name) ->
+            editor.addView(button("${if (key in selectedAiReviews) "✓" else "○"} $name") {
+                if (!selectedAiReviews.add(key)) selectedAiReviews.remove(key)
+                renderAiReviewEditor()
+            }.apply {
+                contentDescription = "$name · ${if (key in selectedAiReviews) "označeno" else "neoznačeno"}"
+            }, margin(0, 4, 0, 0))
+        }
+    }
+
     private fun startNewItem() {
+        selectedAiReviews.clear()
+        renderAiReviewEditor()
         editingItemIndex = null
         originalQuizPrompt = ""
         originalQuizAnswers = ""
@@ -1872,6 +1985,12 @@ class MainActivity : Activity() {
         dateButton?.text = "Datum · $dateValue"
         descriptionInput?.setText(item.optString("task"))
         solutionInput?.setText(item.optString("solution"))
+        selectedAiReviews.clear()
+        val reviews = item.optJSONArray("aiReviews")
+        aiReviewNames.keys.filterTo(selectedAiReviews) { key ->
+            reviews != null && (0 until reviews.length()).any { reviews.optString(it) == key }
+        }
+        renderAiReviewEditor()
 
         val firstQuestion = item.optJSONObject("quiz")?.optJSONArray("questions")?.optJSONObject(0)
         val simpleTextQuestion = firstQuestion?.optString("type") == "text"
@@ -1949,6 +2068,7 @@ class MainActivity : Activity() {
             .put("date", SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(parsedDate))
             .put("task", descriptionInput?.text?.toString()?.trim().orEmpty())
             .put("solution", if (selectedType == "task") solutionInput?.text?.toString()?.trim().orEmpty() else "")
+        if (selectedType == "task") item.put("aiReviews", JSONArray(selectedAiReviews.toList()))
         if (selectedType == "test") {
             val prompt = quizPromptInput?.text?.toString()?.trim().orEmpty()
             val answers = quizAnswersInput?.text?.toString().orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
@@ -1961,6 +2081,8 @@ class MainActivity : Activity() {
         }
         clearQuizCheckBox?.isChecked = false
         db.getJSONArray("tasks").put(item)
+        selectedAiReviews.clear()
+        renderAiReviewEditor()
         titleInput?.text?.clear()
         descriptionInput?.text?.clear()
         solutionInput?.text?.clear()
@@ -1993,6 +2115,9 @@ class MainActivity : Activity() {
             .put("task", descriptionInput?.text?.toString()?.trim().orEmpty())
         if (selectedType == "task") {
             updated.put("solution", solutionInput?.text?.toString()?.trim().orEmpty())
+            updated.put("aiReviews", JSONArray(selectedAiReviews.toList()))
+        } else {
+            updated.remove("aiReviews")
         }
 
         val prompt = quizPromptInput?.text?.toString()?.trim().orEmpty()
@@ -2545,7 +2670,7 @@ class MainActivity : Activity() {
         content.addView(label("Chceš stáhnout a nainstalovat novou verzi aplikace?", 15, muted, false), margin(0, 12, 0, 12))
         content.addView(label("Co je nového", 17, ink, true))
         val notes = label("", 15, ink, false).apply {
-            text = formattedText(updateReleaseNotes.ifBlank { "Tato verze nemá na GitHubu uvedený changelog." })
+            richText.setText(this, updateReleaseNotes.ifBlank { "Tato verze nemá na GitHubu uvedený changelog." })
             setTextIsSelectable(true)
             movementMethod = android.text.method.LinkMovementMethod.getInstance()
             setPadding(0, dp(12), 0, dp(12))
@@ -2848,6 +2973,7 @@ class MainActivity : Activity() {
         }
         solutionInput?.visibility = if (type == "task") View.VISIBLE else View.GONE
         solutionTemplateButton?.visibility = if (type == "task") View.VISIBLE else View.GONE
+        aiReviewEditor?.visibility = if (type == "task") View.VISIBLE else View.GONE
         quizPromptInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
         quizAnswersInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
     }
@@ -3018,7 +3144,13 @@ class MainActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
+    override fun onPause() {
+        databaseQrDialog?.dismiss()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        databaseQrDialog?.dismiss()
         password?.fill('\u0000')
         worker.shutdownNow()
         networkWorker.shutdownNow()

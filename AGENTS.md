@@ -17,3 +17,4 @@
 - Zachovej nesouvisející rozpracované změny uživatele. Před úpravami zkontroluj pracovní strom a při dokončení uveď, které změny patří k aktuálnímu požadavku.
 - Verzi aplikace ani webu neposouvej, pokud to uživatel výslovně nepožádal nebo to není nezbytná součást zadaného výsledku.
 - U Android rozhraní zachovávej vlastní vizuální styl aplikace a používej její vlastní dialogy a průběhové obrazovky tam, kde uživatel interaguje s aplikací. Systémová obrazovka je vhodná pro kroky, které musí provést Android, například instalaci APK nebo oprávnění.
+- Funkce, které dávají smysl na webu i v Android aplikaci a lze je na obou platformách realizovat, implementuj na obou. Zachovej společný formát dat a kompatibilitu starších položek; omezení platformy pojmenuj.

@@ -688,6 +688,26 @@ def set_practice_sets(item, quizzes):
             item["quizzes"] = quizzes[1:]
 
 
+AI_REVIEW_NAMES = {"chatgpt": "ChatGPT", "claude": "Claude", "gemini": "Gemini", "deepseek": "DeepSeek"}
+
+
+def choose_ai_reviews(current=None):
+    current = current if isinstance(current, list) else []
+    selected = [key for key in AI_REVIEW_NAMES if key in current]
+    print("  AI kontrola: " + (", ".join(AI_REVIEW_NAMES[key] for key in selected) or "žádná"))
+    while True:
+        value = ask("AI kontrola [1] ChatGPT / [2] Claude / [3] Gemini / [4] DeepSeek (čísla čárkou, Enter ponechat, - odebrat)").strip()
+        if not value:
+            return selected
+        if value == "-":
+            return []
+        parts = value.replace(" ", ",").split(",")
+        choices = {part for part in parts if part}
+        if choices and choices <= {"1", "2", "3", "4"}:
+            return [key for i, key in enumerate(AI_REVIEW_NAMES, 1) if str(i) in choices]
+        cli_error("Vyber čísla 1–4, Enter nebo -.")
+
+
 def add(type_argument=None):
     heading("Nová položka", "Úkol, test nebo školní akce")
     data, password = open_data()
@@ -711,6 +731,8 @@ def add(type_argument=None):
         "task": text,
         "solution": solution,
     }
+    if kind == "task":
+        item["aiReviews"] = choose_ai_reviews()
     if kind == "test":
         set_practice_sets(item, build_practice_sets())
     data["tasks"].append(item)
@@ -833,6 +855,10 @@ def info(index=None):
     heading(item.get("name") or "Bez názvu", TYPES.get(item.get("type"), "Položka"))
     print(f"  {muted('Datum:')} {item.get('date') or 'neuvedeno'}")
     print(f"  {muted('Popis:')} {item.get('task') or '—'}")
+    if item.get("type") == "task" and isinstance(item.get("aiReviews"), list):
+        names = [name for key, name in AI_REVIEW_NAMES.items() if key in item["aiReviews"]]
+        if names:
+            print(f"  {muted('AI kontrola:')} {', '.join(names)}")
     if item.get("solution"):
         print(f"  {muted('Řešení:')} {item['solution']}")
 
@@ -897,6 +923,9 @@ def edit(index=None):
             multiline=True,
             clearable=True,
         )
+
+    if updated.get("type") == "task":
+        updated["aiReviews"] = choose_ai_reviews(updated.get("aiReviews"))
 
     if updated.get("type") == "test" or "quiz" in updated or "quizzes" in updated:
         while True:
@@ -1117,6 +1146,12 @@ def infer_commit_prefix(changed_paths):
     web_files = {
         "index.html",
         "app.js",
+        "web-settings.js",
+        "web-qr.js",
+        "web-formatting.js",
+        "practice-progress.js",
+        "web-offline.js",
+        "sw.js",
         "favicon.ico",
         "favicon.png",
         "apple-touch-icon.png",
@@ -1126,7 +1161,7 @@ def infer_commit_prefix(changed_paths):
     android_files = {
         ".github/workflows/android.yml",
     }
-    builds_web = any(path in web_files for path in changed_paths)
+    builds_web = any(path in web_files or path == "vendor" or path.startswith("vendor/") for path in changed_paths)
     builds_android = any(
         path in android_files or path == "app" or path.startswith("app/")
         for path in changed_paths
@@ -1201,6 +1236,12 @@ def commit(message=None):
     web_files = (
         "index.html",
         "app.js",
+        "web-settings.js",
+        "web-qr.js",
+        "web-formatting.js",
+        "practice-progress.js",
+        "web-offline.js",
+        "sw.js",
         "favicon.ico",
         "favicon.png",
         "apple-touch-icon.png",
@@ -1210,7 +1251,7 @@ def commit(message=None):
     for line in changed:
         path = line[3:].split(" -> ")[-1].strip('"')
         changed_paths.append(path)
-    touches_web = any(path in web_files or path == ".github/" for path in changed_paths)
+    touches_web = any(path in web_files or path == ".github/" or path == "vendor" or path.startswith("vendor/") for path in changed_paths)
     touches_android_app = any(
         path == "app" or path.startswith("app/") for path in changed_paths
     )
@@ -1233,6 +1274,13 @@ def commit(message=None):
     files = [
         "index.html",
         "app.js",
+        "web-settings.js",
+        "web-qr.js",
+        "web-formatting.js",
+        "practice-progress.js",
+        "web-offline.js",
+        "sw.js",
+        "vendor",
         "favicon.ico",
         "favicon.png",
         "apple-touch-icon.png",

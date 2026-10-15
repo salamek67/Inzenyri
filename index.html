@@ -8,6 +8,7 @@
     <link rel="icon" href="favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="favicon.png" sizes="32x32" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" sizes="180x180" />
+    <link rel="stylesheet" href="vendor/katex-0.19.0.min.css" />
     <style>
       :root {
         color-scheme: light;
@@ -462,6 +463,8 @@
         font-size: 0.76rem;
         font-weight: 750;
       }
+      .ai-reviews { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; font-size: .75rem; color: var(--muted); }
+      .ai-review-badge { padding: 4px 9px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 12%, var(--surface, transparent)); color: var(--muted); font-weight: 600; }
       .item-text {
         margin: 13px 0 0;
         color: var(--muted);
@@ -934,6 +937,56 @@
           width: 100%;
         }
       }
+      .practice-set { padding: 20px; margin: 16px 0; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+      .practice-set h2 { margin: 0 0 8px; font-size: 1.2rem; }
+      .practice-set p, .settings-note { color: var(--muted); }
+      #quizContent > .quiz-primary { margin: 8px 8px 0 0; }
+      .android-promo { display: flex; justify-content: space-between; gap: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); margin-bottom: 20px; }
+      .android-promo[hidden] { display: none; }
+      .android-promo p { margin: 8px 0; color: var(--muted); }
+      .android-promo a, .settings-dialog a { color: var(--violet); }
+      .android-promo button, .settings-dialog button, #calendarToggle { border: 0; background: none; color: var(--text); font: inherit; cursor: pointer; padding: 8px; }
+      .android-promo button { align-self: flex-start; }
+      #calendarToggle { font-weight: 750; padding: 0; }
+      .calendar.is-collapsed .calendar-nav, .calendar.is-collapsed .calendar-month { display: none; }
+      .settings-dialog { color: var(--text); background: var(--solid); border: 1px solid var(--line); border-radius: 24px; padding: 24px; width: min(440px, calc(100% - 32px)); max-height: 85dvh; box-sizing: border-box; }
+      .settings-dialog::backdrop { background: #11182780; backdrop-filter: blur(5px); }
+      .settings-dialog header { display: flex; align-items: center; justify-content: space-between; }
+      .settings-dialog label { display: flex; gap: 12px; align-items: center; padding: 14px 0; }
+      .settings-dialog input { accent-color: var(--violet); width: 20px; height: 20px; }
+      .item-text code, .solution code { font-family: ui-monospace, monospace; background: var(--violet-soft); border-radius: 5px; padding: 2px 5px; }
+      .item-text pre, .solution pre { overflow-x: auto; padding: 12px; background: var(--violet-soft); border-radius: 12px; white-space: pre; }
+      .item-text blockquote, .solution blockquote { border-left: 3px solid var(--violet); padding-left: 12px; margin: 8px 0; color: var(--muted); }
+      .settings-note { font-size: .85rem; line-height: 1.6; }
+      .calendar-agenda-list .item { width: auto; min-width: 0; max-width: none; margin: 0; opacity: 1; filter: none; transform: none; }
+      .calendar-agenda-list .item[data-type="test"] { --accent: #ec6c68; }
+      .calendar-agenda-list .item[data-type="event"] { --accent: #3c82f6; }
+      .calendar-agenda-list .item.is-done { opacity: .62; }
+      .quiz-progress-bar { display: block; width: 100%; height: 8px; margin: 0 0 20px; accent-color: var(--violet); border: 0; border-radius: 999px; overflow: hidden; }
+      .quiz-progress-bar::-webkit-progress-bar { background: var(--violet-soft); }
+      .quiz-progress-bar::-webkit-progress-value { background: var(--violet); }
+      .settings-dialog .quiz-primary { color: #fff; background: var(--violet); border-radius: 13px; padding: 11px 16px; }
+      #qrLoginButton { margin-top: 14px; width: 100%; }
+      .qr-viewfinder { position: relative; background: #171524; border-radius: 20px; overflow: hidden; aspect-ratio: 1; }
+      .qr-viewfinder video { width: 100%; height: 100%; object-fit: cover; }
+      .qr-viewfinder > span { position: absolute; inset: 16%; border: 3px solid #b6a0ff; border-radius: 16px; pointer-events: none; }
+      #sharedQr { display: block; width: min(100%, 320px); height: auto; margin: 16px auto 0; background: #fff; }
+      #sharedQr[hidden] { display: none; }
+      #qrImage { width: 100%; max-width: 100%; height: auto; min-height: 44px; }
+      #pullRefreshIndicator { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 50; padding: 12px 18px; border-radius: 999px; background: var(--solid); color: var(--violet); box-shadow: var(--shadow); }
+      body.custom-pull-refresh { overscroll-behavior-y: contain; }
+      @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+      .practice-ring { --progress: 0%; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 50%; margin: 16px 0; background: conic-gradient(var(--violet) var(--progress), var(--violet-soft) 0); }
+      .practice-ring > span { display: grid; place-items: center; width: 80px; height: 80px; border-radius: 50%; background: var(--solid); font-size: 1.15rem; font-weight: 800; color: var(--text); }
+      #quizContent > .practice-ring { width: 152px; height: 152px; margin: 24px auto; }
+      #quizContent > .practice-ring > span { width: 128px; height: 128px; font-size: 1.8rem; }
+      .math-block { overflow-x: auto; max-width: 100%; }
+      .math-expression .katex { font-size: 1.1em; }
+      .item-text > :first-child, .solution > :first-child { margin-top: 0; }
+      .item-text > :last-child, .solution > :last-child { margin-bottom: 0; }
+      .item-text h1, .solution h1 { font-size: 1.5rem; }
+      .item-text h2, .solution h2 { font-size: 1.3rem; }
+      .quiz-text { box-sizing: border-box; resize: vertical; }
     </style>
   </head>
   <body>
@@ -974,6 +1027,7 @@
           role="alert"
           aria-live="polite"
         ></p>
+        <button id="qrLoginButton" class="quiz-primary" type="button">Přihlásit se QR kódem</button>
         <p class="security-note">Heslo se neukládá ani neposílá na server.</p>
       </form>
     </section>
@@ -987,6 +1041,8 @@
           </p>
         </div>
         <div class="top-actions">
+          <button id="refreshDatabase" class="icon-button" type="button" aria-label="Obnovit databázi">↻</button>
+          <button id="openSettings" class="icon-button" type="button" aria-label="Nastavení">⚙</button>
           <button
             id="lockButton"
             class="icon-button"
@@ -1004,22 +1060,30 @@
           </button>
         </div>
       </header>
+      <p id="refreshStatus" role="status" aria-live="polite"></p>
+      <aside id="androidPromo" class="android-promo" hidden>
+        <div><strong>Inženýři i v kapse</strong><p>Android aplikace nabízí offline přehled a připomínky termínů.</p>
+        <a href="https://github.com/salamek67/Inzenyri/releases/latest" target="_blank" rel="noopener noreferrer">Získat aplikaci pro Android ↗</a></div>
+        <button id="dismissAndroidPromo" type="button" aria-label="Skrýt nabídku Android aplikace">✕</button>
+      </aside>
       <section class="overview" aria-label="Přehled povinností">
         <section class="category calendar" aria-label="Kalendář nadcházejících položek">
           <header class="calendar-head">
             <span class="category-icon" aria-hidden="true">▦</span>
-            <h2>Kalendář</h2>
+            <h2><button id="calendarToggle" type="button" aria-expanded="true" aria-controls="calendarBody">⌄ Kalendář</button></h2>
             <span id="calendarMonth" class="calendar-month"></span>
             <div class="calendar-nav">
               <button id="calendarPrevious" type="button" aria-label="Předchozí měsíc">‹</button>
               <button id="calendarNext" type="button" aria-label="Další měsíc">›</button>
             </div>
           </header>
+          <div id="calendarBody">
           <div class="calendar-weekdays" aria-hidden="true">
             <span>Po</span><span>Út</span><span>St</span><span>Čt</span><span>Pá</span><span>So</span><span>Ne</span>
           </div>
           <div id="calendarGrid" class="calendar-grid"></div>
           <div id="calendarAgenda" class="calendar-agenda" aria-live="polite"></div>
+          </div>
         </section>
         <section class="category tests">
           <header class="category-head">
@@ -1064,6 +1128,41 @@
       </button>
       <section id="quizContent" class="quiz-card" aria-live="polite"></section>
     </main>
+    <dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
+      <header><h2 id="settingsTitle">Nastavení</h2><button id="closeSettings" type="button" aria-label="Zavřít nastavení">✕</button></header>
+      <label><input id="settingsDarkMode" type="checkbox" /> Tmavý vzhled</label>
+      <label><input id="settingsCalendar" type="checkbox" /> Rozbalený kalendář</label>
+      <label><input id="settingsAutoLogin" type="checkbox" /> Přihlášení přes správce hesel</label>
+      <p class="settings-note">Heslo ani klíč neukládáme do úložiště stránky. Pro obnovu databáze zůstává přihlašovací klíč jen v paměti do zamknutí nebo zavření stránky.</p>
+      <label><input id="settingsOffline" type="checkbox" /> Uložit šifrovanou DB pro offline použití</label>
+      <p class="settings-note">Offline se ukládá jen šifrovaná databáze. Heslo ani přihlašovací klíč do úložiště stránky neukládáme.</p>
+      <p id="offlineStatus" class="settings-note" role="status">Databáze se připraví pro offline použití po odemčení.</p>
+      <button id="shareLoginQr" class="quiz-primary" type="button">Zobrazit přihlašovací QR kód</button>
+      <label><input id="settingsAndroidPromo" type="checkbox" /> Zobrazovat nabídku Android aplikace</label>
+      <a href="https://github.com/salamek67/Inzenyri/releases/latest" target="_blank" rel="noopener noreferrer">Stáhnout Android aplikaci ↗</a>
+    </dialog>
+    <dialog id="qrScanDialog" class="settings-dialog qr-dialog" aria-labelledby="qrScanTitle">
+      <header><h2 id="qrScanTitle">Přihlášení QR kódem</h2><button id="closeQrScan" type="button" aria-label="Zavřít skener">✕</button></header>
+      <div class="qr-viewfinder"><video id="qrVideo" playsinline muted autoplay></video><span aria-hidden="true"></span></div>
+      <p id="qrScanStatus" role="status"></p>
+      <button id="qrStartCamera" class="quiz-primary" type="button">Zapnout fotoaparát</button>
+      <label for="qrImage">Nebo vyber obrázek QR kódu</label><input id="qrImage" type="file" accept="image/*" />
+    </dialog>
+    <dialog id="qrShareDialog" class="settings-dialog qr-dialog" aria-labelledby="qrShareTitle">
+      <header><h2 id="qrShareTitle">Sdílet přihlášení</h2><button id="closeQrShare" type="button" aria-label="Zavřít QR kód">✕</button></header>
+      <p>Kód obsahuje heslo k databázi. Zobraz ho jen důvěryhodné osobě; nepřiděluje přístup k údržbě GitHubu.</p>
+
+      <p id="qrShareStatus" role="status"></p><canvas id="sharedQr" hidden aria-label="Přihlašovací QR kód"></canvas>
+    </dialog>
+    <div id="pullRefreshIndicator" role="status" aria-live="polite" hidden>↓ Táhni pro obnovení</div>
+    <script src="vendor/marked-18.1.1.js"></script>
+    <script src="vendor/dompurify-3.4.17.min.js"></script>
+    <script src="vendor/katex-0.19.0.min.js"></script>
+    <script src="web-formatting.js"></script>
+    <script src="practice-progress.js"></script>
     <script src="app.js"></script>
+    <script src="web-settings.js"></script>
+    <script src="web-qr.js"></script>
+    <script src="web-offline.js"></script>
   </body>
 </html>
