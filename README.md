@@ -2,6 +2,13 @@
 
 Školní přehled úkolů, testů a akcí pro web a Android.
 
+**Free to fork.** Projekt můžeš zdarma používat, upravovat a šířit i komerčně.
+Vlastní kód je pod licencí [0BSD](LICENSE), bez povinnosti uvádět autora.
+Převzaté knihovny a fonty mají vlastní licence přiložené ve `web/vendor/`
+a u Android závislostí.
+
+Pro vlastní nasazení začni [návodem krok za krokem](docs/tutorial.md).
+
 ## Složky
 
 - `app/` — Android aplikace, Kotlin zdroje a Gradle konfigurace.
