@@ -8,7 +8,7 @@ function writePreference(name, value) {
 }
 
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.6.0";
+const PAGE_VERSION = "2.6.1";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -210,6 +210,40 @@ function renderFormattedText(target, value) {
   RichFormatting.render(target, value);
 }
 
+let aiReviewAnchor = null;
+function closeAiReviewBubble() {
+  document.getElementById("aiReviewBubble").hidden = true;
+  aiReviewAnchor?.removeAttribute("aria-describedby");
+  aiReviewAnchor = null;
+}
+
+// Delegation also handles the carousel's cloned cards.
+document.addEventListener("click", (event) => {
+  const badge = event.target.closest?.(".ai-review-badge");
+  if (!badge || badge === aiReviewAnchor) { closeAiReviewBubble(); return; }
+  const name = badge.dataset.aiName;
+  if (!["ChatGPT", "Claude", "Gemini", "DeepSeek"].includes(name)) return;
+  closeAiReviewBubble();
+  const bubble = document.getElementById("aiReviewBubble");
+  bubble.textContent = `Úkol byl zkontrolován pomocí ${name}.`;
+  bubble.hidden = false;
+  const anchor = badge.getBoundingClientRect(), bounds = bubble.getBoundingClientRect();
+  const center = anchor.left + anchor.width / 2;
+  const left = Math.max(12, Math.min(center - bounds.width / 2, window.innerWidth - bounds.width - 12));
+  const below = anchor.top < bounds.height + 20;
+  bubble.classList.toggle("is-below", below);
+  bubble.style.left = `${left}px`;
+  bubble.style.top = `${below ? anchor.bottom + 12 : anchor.top - bounds.height - 12}px`;
+  bubble.style.setProperty("--pointer-x", `${Math.max(18, Math.min(center - left, bounds.width - 18))}px`);
+  badge.setAttribute("aria-describedby", bubble.id);
+  aiReviewAnchor = badge;
+});
+document.addEventListener("scroll", closeAiReviewBubble, { capture: true, passive: true });
+window.addEventListener("resize", closeAiReviewBubble);
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeAiReviewBubble(); });
+document.addEventListener("focusin", event => { if (aiReviewAnchor && !aiReviewAnchor.contains(event.target)) closeAiReviewBubble(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden) closeAiReviewBubble(); });
+
 function createItem(item, index) {
   const key = itemKey(item, index),
     article = document.createElement("article");
@@ -270,17 +304,22 @@ function createItem(item, index) {
       badges.setAttribute("aria-label", "AI kontrola označená maintainerem");
       Object.entries(names).forEach(([key, name]) => {
         if (!item.aiReviews.includes(key)) return;
-        const badge = document.createElement("span");
+        const badge = document.createElement("button");
+        badge.type = "button";
         badge.className = "ai-review-badge";
-        badge.textContent = name;
-        badge.title = `Maintainer označil úkol jako zkontrolovaný přes ${name}`;
+        badge.dataset.aiName = name;
+        badge.setAttribute("aria-label", `Úkol byl zkontrolován pomocí ${name}`);
+        const logo = document.createElement("img");
+        logo.src = `icons/ai/${key}.svg`;
+        logo.alt = "";
+        logo.width = 24;
+        logo.height = 24;
+        logo.setAttribute("aria-hidden", "true");
+        badge.append(logo);
         badges.append(badge);
       });
       if (badges.childElementCount) {
-        const caption = document.createElement("span");
-        caption.textContent = "AI kontrola";
-        badges.prepend(caption);
-        solution.append(badges);
+        solution.prepend(badges);
       }
     }
 
@@ -911,6 +950,7 @@ function showLocked() {
   document.getElementById("calendarMonth").textContent = "";
   document.getElementById("refreshStatus").textContent = "";
   document.getElementById("settingsDialog").close();
+  closeAiReviewBubble();
   unlockedData = null;
   doneItems.clear();
   for (const [listId, countId] of Object.values(CATEGORIES)) {

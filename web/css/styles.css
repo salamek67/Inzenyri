@@ -451,8 +451,13 @@
         font-size: 0.76rem;
         font-weight: 750;
       }
-      .ai-reviews { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; font-size: .75rem; color: var(--muted); }
-      .ai-review-badge { padding: 4px 9px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 12%, var(--surface, transparent)); color: var(--muted); font-weight: 600; }
+      .ai-reviews { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; align-items: center; margin: 0 0 10px; font-size: .75rem; color: var(--muted); }
+      .ai-review-badge { display: inline-flex; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); align-items: center; justify-content: center; border-radius: 50%; background: color-mix(in srgb, #bc9475 24%, var(--solid)); cursor: pointer; }
+      .ai-review-badge:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+      .ai-review-badge img { display: block; width: 24px; height: 24px; }
+      .ai-review-bubble { position: fixed; z-index: 10000; width: max-content; max-width: min(280px, calc(100vw - 24px)); box-sizing: border-box; padding: 12px 16px; border-radius: 16px; background: color-mix(in srgb, #bc9475 28%, var(--solid)); color: var(--text); font-size: .875rem; line-height: 1.45; text-align: center; box-shadow: 0 5px 20px #291a1426; pointer-events: none; }
+      .ai-review-bubble::after { content: ""; position: absolute; left: var(--pointer-x, 50%); bottom: -7px; width: 14px; height: 14px; background: inherit; transform: translateX(-50%) rotate(45deg); }
+      .ai-review-bubble.is-below::after { bottom: auto; top: -7px; }
       .item-text {
         margin: 13px 0 0;
         color: var(--muted);

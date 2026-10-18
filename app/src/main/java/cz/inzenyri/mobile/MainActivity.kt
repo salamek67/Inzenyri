@@ -93,6 +93,7 @@ class MainActivity : ComponentActivity() {
     private var updateReleaseNotes = ""
     private var updateVersion: String? = null
     private var updateProgressDialog: Dialog? = null
+    private var pushProgressDialog: OperationProgressDialog? = null
     private var databaseQrDialog: Dialog? = null
     private var updateProgressStatus: TextView? = null
     private var updateProgressSpinner: ProgressBar? = null
@@ -137,6 +138,8 @@ class MainActivity : ComponentActivity() {
     private val carouselAnchors = mutableMapOf<String, CarouselAnchor>()
     private val quizProgress by lazy { QuizProgressStore(this) }
     private val richText by lazy { RichTextRenderer(this) }
+    private val aiReviewLogos by lazy { AiReviewLogoRenderer(this) }
+    private val aiReviewBubble by lazy { AiReviewBubble(this) }
     private var quizExitAction: (() -> Unit)? = null
     private var solutionTemplateButton: Button? = null
 
@@ -1465,27 +1468,40 @@ class MainActivity : ComponentActivity() {
                 linksClickable = true
                 movementMethod = LinkMovementMethod.getInstance()
             }
-            solutionContent.addView(solutionText)
             if (itemType(item) == "task") {
                 val reviews = item.optJSONArray("aiReviews")
-                val names = aiReviewNames.filterKeys { key ->
+                val reviewsToShow = aiReviewNames.filterKeys { key ->
                     reviews != null && (0 until reviews.length()).any { reviews.optString(it) == key }
-                }.values
-                if (names.isNotEmpty()) {
-                    solutionContent.addView(label("AI kontrola", 12, muted, false), margin(0, 10, 0, 0))
-                    names.toList().chunked(2).forEach { pair ->
-                        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                        pair.forEach { name ->
-                            row.addView(label(name, 12, if (darkMode) Color.rgb(226, 226, 232) else Color.rgb(84, 84, 94), true).apply {
-                                contentDescription = "Maintainer označil úkol jako zkontrolovaný přes $name"
-                                setPadding(dp(10), dp(7), dp(10), dp(7))
-                                background = rounded(if (darkMode) Color.rgb(63, 63, 73) else Color.rgb(243, 243, 247), 50)
-                            }, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) })
-                        }
-                        solutionContent.addView(row, margin(0, 5, 0, 0))
+                }
+                if (reviewsToShow.isNotEmpty()) {
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_HORIZONTAL
                     }
+                    reviewsToShow.forEach { (key, name) ->
+                        val icon = when (key) {
+                            "chatgpt" -> R.drawable.ai_chatgpt
+                            "claude" -> R.drawable.ai_claude
+                            "gemini" -> R.drawable.ai_gemini
+                            else -> R.drawable.ai_deepseek
+                        }
+                        row.addView(ImageView(this).apply {
+                            scaleType = ImageView.ScaleType.FIT_CENTER
+                            imageTintList = null
+                            clearColorFilter()
+                            setImageBitmap(aiReviewLogos.bitmap(icon))
+                            contentDescription = "Úkol byl zkontrolován pomocí $name"
+                            tooltipText = contentDescription
+                            isFocusable = true
+                            setOnClickListener { aiReviewBubble.show(it, name, darkMode) }
+                            setPadding(dp(12), dp(12), dp(12), dp(12))
+                            background = rounded(if (darkMode) Color.rgb(61, 49, 43) else Color.rgb(245, 237, 229), 50)
+                        }, LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginStart = dp(3); marginEnd = dp(3) })
+                    }
+                    solutionContent.addView(row, margin(0, 5, 0, 0))
                 }
             }
+            solutionContent.addView(solutionText, margin(0, 8, 0, 0))
             val initialLabel = if (itemType(item) == "test") "Zobrazit procvičování" else "Zobrazit řešení"
             val solutionButton = button(initialLabel) { }
             solutionButton.setOnClickListener {
@@ -2179,37 +2195,66 @@ class MainActivity : ComponentActivity() {
         if (database == null || password == null) return toast("Nejdřív otevři a odemkni databázi.")
         if (!isDatabaseDirty()) return toast("Zatím nejsou žádné nové položky.")
         runGithubTask(freezeForm = true) { token ->
-            GitHubApiClient.verifyWriteAccess(GITHUB_OWNER, GITHUB_REPO, token)
-            val path = "repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH"
-            val current = JSONObject(githubRequest(path, token = token))
-            val encodedContent = current.optString("content").ifBlank {
-                current.optJSONObject("content")?.optString("content").orEmpty()
-            }
-            require(encodedContent.isNotBlank()) { "GitHub API nevrátil obsah databáze." }
-            val content = Base64.getMimeDecoder().decode(encodedContent)
-            val remoteEnvelope = JSONObject(String(content, StandardCharsets.UTF_8))
-            val remotePlain = decrypt(remoteEnvelope, password ?: error("Databáze je zamčená."))
-            val remoteDatabase = JSONObject(String(remotePlain, StandardCharsets.UTF_8))
-            if (databaseHash(remoteDatabase) != originalDatabaseHash) {
-                throw IOException("Databáze na origin se od načtení změnila. Načti nejnovější data a zkus znovu.")
-            }
-            sourceEnvelope = remoteEnvelope
-            val updatedEnvelope = JSONObject(encryptedOutput())
-            val commitMessage = "[app skip] Update DB (${updatedEnvelope.getString("dbVersion")})"
-            val payload = JSONObject()
-                .put("message", commitMessage)
-                .put("content", Base64.getEncoder().encodeToString(updatedEnvelope.toString(2).toByteArray(StandardCharsets.UTF_8) + byteArrayOf(10)))
-                .put("sha", current.getString("sha"))
-                .put("branch", GITHUB_BRANCH)
-            githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json", "PUT", token, payload.toString())
-            sourceEnvelope = updatedEnvelope
-            originalDatabaseHash = databaseHash(database!!)
-            getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, originalDatabaseHash).apply()
-            saveLocalDatabase(updatedEnvelope.toString(2) + "\n")
+            var activeStep = 0
             runOnUiThread {
-                statusView?.text = "Push hotov · $commitMessage"
-                addButton?.isEnabled = true
-                toast("Databáze byla odeslána na origin.")
+                pushProgressDialog?.dismiss()
+                pushProgressDialog = OperationProgressDialog(this, "Odesílání databáze", listOf(
+                    "Ověřuji oprávnění GitHubu",
+                    "Kontroluji aktuální databázi na originu",
+                    "Šifruji změny",
+                    "Odesílám databázi na origin",
+                    "Ukládám místní kopii"
+                ), darkMode, purple).also { it.step(0) }
+            }
+            try {
+                GitHubApiClient.verifyWriteAccess(GITHUB_OWNER, GITHUB_REPO, token)
+                activeStep = 1
+                runOnUiThread { pushProgressDialog?.step(1) }
+                val path = "repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH"
+                val current = JSONObject(githubRequest(path, token = token))
+                val encodedContent = current.optString("content").ifBlank {
+                    current.optJSONObject("content")?.optString("content").orEmpty()
+                }
+                require(encodedContent.isNotBlank()) { "GitHub API nevrátil obsah databáze." }
+                val content = Base64.getMimeDecoder().decode(encodedContent)
+                val remoteEnvelope = JSONObject(String(content, StandardCharsets.UTF_8))
+                val remotePlain = decrypt(remoteEnvelope, password ?: error("Databáze je zamčená."))
+                val remoteDatabase = JSONObject(String(remotePlain, StandardCharsets.UTF_8))
+                if (databaseHash(remoteDatabase) != originalDatabaseHash) {
+                    throw IOException("Databáze na origin se od načtení změnila. Načti nejnovější data a zkus znovu.")
+                }
+                sourceEnvelope = remoteEnvelope
+                activeStep = 2
+                runOnUiThread { pushProgressDialog?.step(2) }
+                val updatedEnvelope = JSONObject(encryptedOutput())
+                val commitMessage = "[app skip] Update DB (${updatedEnvelope.getString("dbVersion")})"
+                val payload = JSONObject()
+                    .put("message", commitMessage)
+                    .put("content", Base64.getEncoder().encodeToString(updatedEnvelope.toString(2).toByteArray(StandardCharsets.UTF_8) + byteArrayOf(10)))
+                    .put("sha", current.getString("sha"))
+                    .put("branch", GITHUB_BRANCH)
+                activeStep = 3
+                runOnUiThread { pushProgressDialog?.step(3) }
+                githubRequest("repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json", "PUT", token, payload.toString())
+                activeStep = 4
+                runOnUiThread { pushProgressDialog?.step(4) }
+                sourceEnvelope = updatedEnvelope
+                originalDatabaseHash = databaseHash(database!!)
+                getSharedPreferences(DB_PREFS, MODE_PRIVATE).edit().putString(DB_BASELINE_HASH, originalDatabaseHash).apply()
+                saveLocalDatabase(updatedEnvelope.toString(2) + "\n")
+                runOnUiThread {
+                    statusView?.text = "Push hotov · $commitMessage"
+                    addButton?.isEnabled = true
+                    toast("Databáze byla odeslána na origin.")
+                    pushProgressDialog?.finish("Databáze byla odeslána · ${updatedEnvelope.getString("dbVersion")}")
+                }
+            } catch (e: Exception) {
+                val failedStep = activeStep
+                runOnUiThread {
+                    val prefix = if (failedStep == 4) "DB je na originu, ale místní uložení selhalo: " else "Odeslání selhalo: "
+                    pushProgressDialog?.finish(prefix + (e.message ?: "Neznámá chyba."), failedStep)
+                }
+                throw e
             }
         }
     }
@@ -3139,11 +3184,14 @@ class MainActivity : ComponentActivity() {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     override fun onPause() {
+        aiReviewBubble.dismiss()
         databaseQrDialog?.dismiss()
         super.onPause()
     }
 
     override fun onDestroy() {
+        pushProgressDialog?.dismiss()
+        pushProgressDialog = null
         databaseQrDialog?.dismiss()
         password?.fill('\u0000')
         worker.shutdownNow()

@@ -15,8 +15,9 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = providers.gradleProperty("appVersionCode").orElse("1").get().toInt()
-        versionName = providers.gradleProperty("appVersionName").orElse("2.0.0").get()
+        versionName = providers.gradleProperty("appVersionName").orElse("2.0.1").get()
         buildConfigField("String", "GITHUB_APP_CLIENT_ID", "\"$githubAppClientId\"")
+        manifestPlaceholders["appLabel"] = "Inženýři"
     }
 
     buildFeatures {
@@ -36,6 +37,13 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            if (providers.gradleProperty("localPreview").orNull == "true") {
+                applicationIdSuffix = ".preview"
+                versionNameSuffix = "-preview"
+                manifestPlaceholders["appLabel"] = "Inženýři Preview"
+            }
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false

@@ -35,3 +35,23 @@ Původní příkaz `python script.py` funguje také. Vlastní implementace je v 
 Z kořene spusť `python3 scripts/serve.py` a otevři `http://127.0.0.1:8000`.
 Lokální server zpřístupňuje pouze veřejný web a šifrovanou DB.
 Pages workflow připraví veřejný artefakt z `web/` a přidá pouze šifrovanou databázi.
+
+## Android preview na PC bez IDE
+
+Na Linuxu s Intel/AMD 64bit, JDK 17, Gradlem 9.8.1 a dostupným KVM:
+
+```sh
+# Poprvé stáhne Android SDK a obraz Androidu, nabídne licence a spustí preview:
+python3 scripts/preview_android.py --setup
+
+# Při dalších změnách stačí:
+python3 scripts/preview_android.py
+
+# Jen otevření posledního preview APK, bez nového buildu:
+python3 scripts/preview_android.py --reuse-apk
+```
+
+Otevře se Android emulátor s aplikací **Inženýři Preview**. Je oddělená od běžné
+aplikace a zachovává vlastní data mezi sestaveními. Nic se necommituje ani nepushuje.
+První setup stáhne několik GB; Android Studio není potřeba.
+Podrobnosti a řešení problémů jsou v [návodu](docs/android-preview.md).

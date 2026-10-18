@@ -1,5 +1,5 @@
 /* Only the public app shell and a validated encrypted database are cached. */
-const SHELL_CACHE = "inzenyri-shell-7", DATA_CACHE = "inzenyri-data-1";
+const SHELL_CACHE = "inzenyri-shell-11", DATA_CACHE = "inzenyri-data-1";
 const assetPaths = [
   "./",
   "index.html",
@@ -18,6 +18,10 @@ const assetPaths = [
   "icons/favicon.ico",
   "icons/favicon.png",
   "icons/apple-touch-icon.png",
+  "icons/ai/chatgpt.svg",
+  "icons/ai/claude.svg",
+  "icons/ai/gemini.svg",
+  "icons/ai/deepseek.svg",
   "vendor/fonts/KaTeX_AMS-Regular.woff2",
   "vendor/fonts/KaTeX_Caligraphic-Bold.woff2",
   "vendor/fonts/KaTeX_Caligraphic-Regular.woff2",
