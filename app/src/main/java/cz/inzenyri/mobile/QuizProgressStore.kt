@@ -19,6 +19,28 @@ internal data class QuizAttempt(var order: List<Int>, var cursor: Int, val answe
 internal class QuizProgressStore(context: Context) {
     private val preferences = context.getSharedPreferences("quiz_progress", Context.MODE_PRIVATE)
 
+    init { cleanup() }
+
+    private fun cleanup() {
+        val now = System.currentTimeMillis()
+        val editor = preferences.edit()
+        val retained = mutableListOf<Pair<String, Long>>()
+        for ((key, raw) in preferences.all) {
+            val value = runCatching { JSONObject(raw as String) }.getOrNull()
+            val updated = value?.optLong("updatedAt", now) ?: 0L
+            if (value == null || value.optInt("version") != 1 || updated <= 0 ||
+                updated > now || now - updated > 90L * 24 * 60 * 60 * 1000) {
+                editor.remove(key)
+            } else {
+                // Give existing results a full retention period when upgrading.
+                if (!value.has("updatedAt")) editor.putString(key, value.put("updatedAt", now).toString())
+                retained += key to updated
+            }
+        }
+        retained.sortedByDescending { it.second }.drop(200).forEach { editor.remove(it.first) }
+        editor.apply()
+    }
+
     fun identity(item: JSONObject, quiz: JSONObject, index: Int): QuizIdentity {
         val quizzes = PracticeQuizzes.forTest(item)
         val id = quiz.optString("id").takeIf { it.isNotBlank() && quizzes.count { other -> other.optString("id") == it } == 1 }
@@ -27,23 +49,29 @@ internal class QuizProgressStore(context: Context) {
             hash(canonical(JSONObject().put("questions", questions).put("shuffle", quiz.optBoolean("shuffle")))), questions.length())
     }
 
-    fun read(identity: QuizIdentity): QuizAttempt? { return runCatching {
-        val value = JSONObject(preferences.getString(identity.key, null) ?: return null)
-        if (value.optInt("version") != 1 || value.optString("fingerprint") != identity.fingerprint) return null
-        fun indexes(array: JSONArray): List<Int> = (0 until array.length()).map {
-            val number = array.get(it) as? Number ?: error("Invalid index")
-            number.toInt().also { index -> require(number.toDouble() == index.toDouble()) }
-        }
-        val order = indexes(value.getJSONArray("order"))
-        val answers = indexes(value.getJSONArray("answers"))
-        val rawCursor = value.get("cursor") as? Number ?: error("Invalid cursor")
-        val cursor = rawCursor.toInt()
-        require(rawCursor.toDouble() == cursor.toDouble())
-        require(identity.size > 0 && answers.size == identity.size && answers.all { it in -1..2 })
-        require(order.isNotEmpty() && order.distinct().size == order.size && order.all { it in answers.indices })
-        require(cursor in 0..order.size && order.take(cursor).none { answers[it] == -1 })
-        QuizAttempt(order, cursor, answers.toMutableList())
-    }.getOrNull() }
+    fun read(identity: QuizIdentity): QuizAttempt? {
+        val attempt = runCatching {
+            val value = JSONObject(preferences.getString(identity.key, null) ?: return null)
+            require(value.optInt("version") == 1 && value.optString("fingerprint") == identity.fingerprint)
+            val updated = value.optLong("updatedAt", 0)
+            require(updated > 0 && System.currentTimeMillis() - updated in 0..(90L * 24 * 60 * 60 * 1000))
+            fun indexes(array: JSONArray): List<Int> = (0 until array.length()).map {
+                val number = array.get(it) as? Number ?: error("Invalid index")
+                number.toInt().also { index -> require(number.toDouble() == index.toDouble()) }
+            }
+            val order = indexes(value.getJSONArray("order"))
+            val answers = indexes(value.getJSONArray("answers"))
+            val rawCursor = value.get("cursor") as? Number ?: error("Invalid cursor")
+            val cursor = rawCursor.toInt()
+            require(rawCursor.toDouble() == cursor.toDouble())
+            require(identity.size > 0 && answers.size == identity.size && answers.all { it in -1..2 })
+            require(order.isNotEmpty() && order.distinct().size == order.size && order.all { it in answers.indices })
+            require(cursor in 0..order.size && order.take(cursor).none { answers[it] == -1 })
+            QuizAttempt(order, cursor, answers.toMutableList())
+        }.getOrNull()
+        if (attempt == null) preferences.edit().remove(identity.key).apply()
+        return attempt
+    }
 
     fun fresh(identity: QuizIdentity, shuffle: Boolean): QuizAttempt = QuizAttempt(
         (0 until identity.size).toList().let { if (shuffle) it.shuffled() else it }, 0,
@@ -62,8 +90,10 @@ internal class QuizProgressStore(context: Context) {
 
     fun write(identity: QuizIdentity, attempt: QuizAttempt) {
         preferences.edit().putString(identity.key, JSONObject().put("version", 1)
+            .put("updatedAt", System.currentTimeMillis())
             .put("fingerprint", identity.fingerprint).put("order", JSONArray(attempt.order))
             .put("cursor", attempt.cursor).put("answers", JSONArray(attempt.answers)).toString()).apply()
+        cleanup()
     }
 
     private fun hash(value: String): String = MessageDigest.getInstance("SHA-256")

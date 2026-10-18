@@ -27,3 +27,16 @@ volbou `[d]oplňování` při sestavování kvízu.
 Nový typ vyžaduje aktualizovanou webovou nebo Android aplikaci; starší typy otázek
 zůstávají beze změny. Lokální Android preview standardně načítá DB z originu,
 takže nové lokální otázky se v něm bez aktualizace zdroje databáze samy neobjeví.
+
+## Lokální ukládání výsledků
+
+Web i Android ukládají poslední průběh každého kvízu včetně výsledku, nikoli historii
+všech pokusů. Ukládají pouze hashe, pořadí otázek a stavy odpovědí; text otázek,
+napsané odpovědi ani hesla do tohoto úložiště nepatří. Změna obsahu kvízu zneplatní
+jeho starý výsledek.
+
+Záznamy se odstraňují po 90 dnech bez procvičování daného kvízu a při překročení
+200 kvízů se mažou nejstarší. Úklid probíhá při inicializaci úložiště a při ukládání;
+prošlý záznam se odstraní i při čtení. Dosavadní záznamy bez časového údaje dostanou
+při přechodu na tento formát novou 90denní lhůtu. Na webu se při nedostupném
+localStorage používá pouze paměť pro aktuální otevření stránky.

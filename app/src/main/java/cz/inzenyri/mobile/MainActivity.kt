@@ -2793,7 +2793,20 @@ class MainActivity : ComponentActivity() {
                     statusView?.text = "Stahuji aktualizaci $version…"
                 }
                 activeStep = 1
-                val file = downloadReleaseAsset(asset, token)
+                val file = downloadReleaseAsset(asset, token) { percent, received ->
+                    runOnUiThread {
+                        val indicator = if (percent != null) {
+                            val filled = percent * 6 / 100
+                            "[${"•".repeat(filled)}${"·".repeat(6 - filled)}] $percent %"
+                        } else {
+                            "[······] ${received / 1024} kB"
+                        }
+                        if (updateProgressTitles.size > 1) {
+                            updateProgressTitles[1] = "Stahuji verzi $version  $indicator"
+                            setUpdateProgressStep(1, "RUNNING")
+                        }
+                    }
+                }
                 runOnUiThread { setUpdateProgressStep(1, "SUCCESS") }
                 activeStep = 2
                 runOnUiThread {
@@ -2836,7 +2849,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun downloadReleaseAsset(asset: JSONObject, token: String?): File {
+    private fun downloadReleaseAsset(asset: JSONObject, token: String?, onProgress: (Int?, Long) -> Unit): File {
         val assetUrl = asset.getString("url")
         require(assetUrl.startsWith("https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/assets/")) { "Neplatná adresa APK." }
         val first = (URL(assetUrl).openConnection() as HttpURLConnection).apply {
@@ -2864,7 +2877,30 @@ class MainActivity : ComponentActivity() {
         try {
             val file = File(cacheDir, "updates/$RELEASE_APK_NAME")
             file.parentFile?.mkdirs()
-            connection.inputStream.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+            connection.inputStream.use { input ->
+                val total = connection.contentLengthLong.takeIf { it > 0 }
+                    ?: asset.optLong("size", -1).takeIf { it > 0 }
+                var received = 0L
+                var lastReportedAt = android.os.SystemClock.elapsedRealtime()
+                onProgress(if (total != null) 0 else null, received)
+                file.outputStream().use { output ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count == -1) break
+                        output.write(buffer, 0, count)
+                        received += count
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastReportedAt >= 150) {
+                            val percent = total?.let { (received.toDouble() / it * 100).toInt().coerceIn(0, 99) }
+                            onProgress(percent, received)
+                            lastReportedAt = now
+                        }
+                    }
+                }
+                require(total == null || received == total) { "Stažení APK není úplné. Zkus aktualizaci znovu." }
+                onProgress(100, received)
+            }
             val digest = asset.optString("digest").removePrefix("sha256:")
             if (digest.isNotBlank()) {
                 val actual = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") {
