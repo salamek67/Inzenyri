@@ -180,6 +180,18 @@ def parse_date(value):
     return None
 
 
+def valid_fill_question(question):
+    answers = question.get("answers")
+    template = question.get("template")
+    return (
+        isinstance(template, str)
+        and isinstance(answers, list)
+        and 1 <= len(answers) <= 20
+        and all(isinstance(answer, str) and answer.strip() for answer in answers)
+        and re.findall(r"\{\{([1-9][0-9]*)\}\}", template) == [str(i) for i in range(1, len(answers) + 1)]
+    )
+
+
 def normalize(value):
     if (
         not isinstance(value, dict)
@@ -209,6 +221,8 @@ def normalize(value):
             for question in questions:
                 if isinstance(question, dict) and question.get("type") == "binary":
                     question["type"] = "choice"
+                if isinstance(question, dict) and question.get("type") == "fill" and not valid_fill_question(question):
+                    raise DataError("Neplatná doplňovací otázka: použij {{1}}, {{2}}, … a odpovědi ve stejném pořadí.")
     return {"tasks": value["tasks"]}
 
 
@@ -559,7 +573,7 @@ def ask_number(prompt, minimum=1, maximum=None, default=None):
 def build_practice_question(number, count):
     heading(
         f"Otázka {number} z {count}",
-        "Výběr, textová odpověď nebo čárky ve větě",
+        "Výběr, textová odpověď, doplňování nebo čárky ve větě",
     )
     kind = {
         "v": "choice",
@@ -568,13 +582,17 @@ def build_practice_question(number, count):
         "choice": "choice",
         "t": "text",
         "text": "text",
+        "d": "fill",
+        "doplnovani": "fill",
+        "doplňování": "fill",
+        "fill": "fill",
         "c": "punctuation",
         "č": "punctuation",
         "carky": "punctuation",
         "čárky": "punctuation",
         "interpunkce": "punctuation",
         "punctuation": "punctuation",
-    }.get(ask("Typ [v]ýběr / [t]ext / [č]árky").lower())
+    }.get(ask("Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky").lower())
     if not kind:
         raise DataError("Neplatný typ otázky.")
     if kind == "choice":
@@ -592,6 +610,20 @@ def build_practice_question(number, count):
             "options": options,
             "answer": answer,
         }
+    elif kind == "fill":
+        prompt = ask_multiline("Zadání otázky")
+        template = ask_multiline("Text s políčky {{1}}, {{2}}, … (např. {{1}} H₂ + {{2}} O₂ → {{3}} H₂O)")
+        answers = [value.strip() for value in ask("Správné hodnoty políček v pořadí (odděl |)").split("|")]
+        question = {
+            "type": "fill", "prompt": prompt, "template": template, "answers": answers,
+            "numeric": ask("Vyplňovat jen celá nezáporná čísla? [a/n]").lower() in {"a", "ano"},
+        }
+        if not prompt or not valid_fill_question(question):
+            raise DataError("Vyplň zadání, očíslovaná políčka {{1}}, {{2}}, … a jednu odpověď pro každé políčko.")
+        if question["numeric"] and any(not re.fullmatch(r"[0-9]+", answer) for answer in answers):
+            raise DataError("Číselná políčka musí mít odpovědi zapsané číslicemi.")
+        if not question["numeric"]:
+            question["ignoreCase"] = ask("Ignorovat velikost písmen? [a/n]").lower() in {"a", "ano"}
     elif kind == "text":
         prompt = ask_multiline("Znění otázky")
         answers = [
@@ -897,6 +929,8 @@ def info(index=None):
             answers = question.get("answers", [])
             if kind == "punctuation":
                 print(f"      {muted('Věta:')} {question.get('sentence', '')}")
+            if kind == "fill":
+                print(f"      {muted('Doplňování:')} {question.get('template', '')}")
             print(f"      {muted('Odpověď:')} {' | '.join(map(str, answers)) or '—'}")
             ignore_case = "ano" if question.get("ignoreCase") else "ne"
             print(f"      {muted('Ignorovat velikost:')} {ignore_case}")

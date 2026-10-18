@@ -1,5 +1,5 @@
 /* Only the public app shell and a validated encrypted database are cached. */
-const SHELL_CACHE = "inzenyri-shell-11", DATA_CACHE = "inzenyri-data-1";
+const SHELL_CACHE = "inzenyri-shell-12", DATA_CACHE = "inzenyri-data-1";
 const assetPaths = [
   "./",
   "index.html",
@@ -10,6 +10,7 @@ const assetPaths = [
   "js/web-offline.js",
   "js/web-formatting.js",
   "js/practice-progress.js",
+  "js/quiz-fill.js",
   "vendor/zxing-0.21.3.min.js",
   "vendor/marked-18.1.1.js",
   "vendor/dompurify-3.4.17.min.js",

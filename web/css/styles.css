@@ -455,6 +455,10 @@
       .ai-review-badge { display: inline-flex; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 1px solid var(--line); align-items: center; justify-content: center; border-radius: 50%; background: color-mix(in srgb, #bc9475 24%, var(--solid)); cursor: pointer; }
       .ai-review-badge:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
       .ai-review-badge img { display: block; width: 24px; height: 24px; }
+      .quiz-fill { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 4px; font-size: 1.2rem; line-height: 1.8; }
+      .quiz-fill-token { display: inline-flex; align-items: center; gap: 5px; white-space: pre-wrap; }
+      .quiz-fill-input { box-sizing: border-box; width: 64px; min-height: 48px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--solid); color: var(--text); font: inherit; text-align: center; }
+      .quiz-fill-input:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
       .ai-review-bubble { position: fixed; z-index: 10000; width: max-content; max-width: min(280px, calc(100vw - 24px)); box-sizing: border-box; padding: 12px 16px; border-radius: 16px; background: color-mix(in srgb, #bc9475 28%, var(--solid)); color: var(--text); font-size: .875rem; line-height: 1.45; text-align: center; box-shadow: 0 5px 20px #291a1426; pointer-events: none; }
       .ai-review-bubble::after { content: ""; position: absolute; left: var(--pointer-x, 50%); bottom: -7px; width: 14px; height: 14px; background: inherit; transform: translateX(-50%) rotate(45deg); }
       .ai-review-bubble.is-below::after { bottom: auto; top: -7px; }

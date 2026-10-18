@@ -8,7 +8,7 @@ function writePreference(name, value) {
 }
 
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.6.1";
+const PAGE_VERSION = "2.6.2";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -897,7 +897,8 @@ function renderQuizQuestion() {
     PracticeProgress.write(state.identity, state.attempt);
   }
   const skip = quizAction("Přeskočit", () => { if (state.answered) return; saveOutcome(2); next(); });
-  const valid = ["choice", "text", "punctuation"].includes(question.type) &&
+  const fill = question.type === "fill" ? FillInQuiz.create(question) : null;
+  const valid = (question.type === "fill" ? Boolean(fill) : ["choice", "text", "punctuation"].includes(question.type)) &&
     (question.type !== "choice" || (Array.isArray(question.options) && question.options.length >= 2 &&
       Number.isInteger(question.answer) && question.answer >= 0 && question.answer < question.options.length));
   if (!valid) { root.append(progress, heading, document.createTextNode("Neplatné zadání otázky."), skip); return; }
@@ -908,6 +909,8 @@ function renderQuizQuestion() {
       radio.addEventListener("change", () => { if (!state.answered) form.requestSubmit(); });
       renderFormattedText(text, String(option)); label.append(radio, text); answers.append(label);
     });
+  } else if (fill) {
+    answers.append(fill.element);
   } else {
     const input = document.createElement("textarea"); input.className = "quiz-text"; input.rows = 3;
     input.name = "answerText"; input.required = true; input.autocomplete = "off";
@@ -918,12 +921,12 @@ function renderQuizQuestion() {
   const submit = document.createElement("button"); submit.type = "submit"; submit.className = "quiz-primary"; submit.textContent = "Vyhodnotit";
   actions.append(submit, skip); form.append(answers, actions); root.append(progress, heading, form);
   form.addEventListener("submit", event => {
-    event.preventDefault(); if (state.answered) return; state.answered = true;
+    event.preventDefault(); if (state.answered || (fill && !fill.complete())) return; state.answered = true;
     const data = new FormData(form), written = question.type !== "choice",
       value = written ? data.get("answerText") : Number(data.get("answer")),
       expected = Array.isArray(question.answers) ? question.answers : [question.answer],
       normalize = question.type === "punctuation" ? normalizePunctuationAnswer : normalizeWrittenAnswer,
-      accepted = written ? expected.some(answer => normalize(value, question.ignoreCase === true) === normalize(answer, question.ignoreCase === true)) : value === question.answer;
+      accepted = fill ? fill.correct() : written ? expected.some(answer => normalize(value, question.ignoreCase === true) === normalize(answer, question.ignoreCase === true)) : value === question.answer;
     if (accepted) state.score++;
     saveOutcome(accepted ? 1 : 0);
     form.querySelectorAll("input,textarea,button").forEach(input => input.disabled = true);
@@ -932,7 +935,7 @@ function renderQuizQuestion() {
     feedback.append(result);
     if (!accepted) {
       const correct = document.createElement("p");
-      renderFormattedText(correct, `Správná odpověď: ${written ? expected.join(" / ") : question.options[question.answer]}`);
+      renderFormattedText(correct, `Správná odpověď: ${fill ? fill.solution : written ? expected.join(" / ") : question.options[question.answer]}`);
       feedback.append(correct);
     }
     if (question.explanation) { const text = document.createElement("p"); renderFormattedText(text, question.explanation); feedback.append(text); }

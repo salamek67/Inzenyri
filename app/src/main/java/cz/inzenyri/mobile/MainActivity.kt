@@ -1789,7 +1789,9 @@ class MainActivity : ComponentActivity() {
                 }
                 disable(body)
                 footer.removeAllViews()
-                val correctAnswer = if (kind == "choice") {
+                val correctAnswer = if (kind == "fill") {
+                    FillInQuestionView.solution(question)
+                } else if (kind == "choice") {
                     question.optJSONArray("options")?.optString(question.optInt("answer", -1)).orEmpty()
                 } else {
                     question.optJSONArray("answers")?.let { answers ->
@@ -1830,6 +1832,18 @@ class MainActivity : ComponentActivity() {
                         setTextColor(ink)
                         background = rounded(if (darkMode) Color.rgb(45, 44, 63) else Color.rgb(244, 243, 249), 16)
                     }, margin(0, 0, 0, 10))
+                }
+            } else if (kind == "fill") {
+                if (FillInQuestionView.valid(question)) {
+                    val fields = FillInQuestionView(this, question, ink, muted,
+                        if (darkMode) Color.rgb(45, 44, 63) else Color.rgb(246, 245, 250), muted)
+                    body.addView(fields, margin(0, 0, 0, 14))
+                    footer.addView(button("Vyhodnotit") {
+                        if (!fields.complete()) toast("Doplň všechna políčka.")
+                        else showFeedback(fields.correct())
+                    }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) })
+                } else {
+                    body.addView(label("Neplatné zadání doplňovací otázky. Můžeš ji přeskočit.", 15, muted, false))
                 }
             } else {
                 val field = EditText(this).apply {
