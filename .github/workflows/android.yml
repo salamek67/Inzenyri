@@ -36,7 +36,9 @@ jobs:
 
   debug:
     needs: commit-policy
-    if: ${{ github.event_name != 'release' && needs.commit-policy.outputs.skip_app != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
+    if:
+      ${{ github.event_name != 'release' && needs.commit-policy.outputs.skip_app
+      != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,7 +66,8 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
         env:
-          GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
+          GH_APP_CLIENT_ID:
+            ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
         run: |
           if [ -z "$GH_APP_CLIENT_ID" ]; then
             echo "::error::Set GH_APP_CLIENT_ID in repository Actions Variables (or Secrets) to enable maintainer GitHub login."
@@ -89,7 +92,9 @@ jobs:
 
   release-build:
     needs: commit-policy
-    if: ${{ github.event_name == 'release' && needs.commit-policy.outputs.skip_app != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
+    if:
+      ${{ github.event_name == 'release' && needs.commit-policy.outputs.skip_app
+      != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -130,7 +135,8 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/inzenyri-release.jks" >> "$GITHUB_ENV"
       - name: Build signed release APK
         env:
-          GH_APP_CLIENT_ID: ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
+          GH_APP_CLIENT_ID:
+            ${{ vars.GH_APP_CLIENT_ID || secrets.GH_APP_CLIENT_ID }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -170,4 +176,7 @@ jobs:
       - name: Attach APK to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/release/inzenyri-android.apk" --clobber --repo "$GITHUB_REPOSITORY"
+        run:
+          gh release upload "$GITHUB_REF_NAME"
+          "$RUNNER_TEMP/release/inzenyri-android.apk" --clobber --repo
+          "$GITHUB_REPOSITORY"

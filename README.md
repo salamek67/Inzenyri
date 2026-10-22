@@ -4,15 +4,16 @@
 
 **Free to fork.** Projekt můžeš zdarma používat, upravovat a šířit i komerčně.
 Vlastní kód je pod licencí [0BSD](LICENSE), bez povinnosti uvádět autora.
-Převzaté knihovny a fonty mají vlastní licence přiložené ve `web/vendor/`
-a u Android závislostí.
+Převzaté knihovny a fonty mají vlastní licence přiložené ve `web/vendor/` a u
+Android závislostí.
 
 Pro vlastní nasazení začni [návodem krok za krokem](docs/tutorial.md).
 
 ## Složky
 
 - `app/` — Android aplikace, Kotlin zdroje a Gradle konfigurace.
-- `web/` — veřejný web: `index.html`, `js/`, `css/`, `icons/`, `vendor/` a `sw.js`.
+- `web/` — veřejný web: `index.html`, `js/`, `css/`, `icons/`, `vendor/` a
+  `sw.js`.
 - `scripts/` — Python správce databáze a jeho `requirements.txt`.
 - `docs/` — dokumentace, včetně [Android aplikace](docs/android.md).
 - `private/` — ignorovaná lokální databáze a heslo; nepublikuje se.
@@ -28,13 +29,14 @@ python3 -m pip install -r scripts/requirements.txt
 python3 script.py
 ```
 
-Původní příkaz `python script.py` funguje také. Vlastní implementace je v `scripts/script.py`.
+Původní příkaz `python script.py` funguje také. Vlastní implementace je v
+`scripts/script.py`.
 
 ## Lokální web
 
 Z kořene spusť `python3 scripts/serve.py` a otevři `http://127.0.0.1:8000`.
-Lokální server zpřístupňuje pouze veřejný web a šifrovanou DB.
-Pages workflow připraví veřejný artefakt z `web/` a přidá pouze šifrovanou databázi.
+Lokální server zpřístupňuje pouze veřejný web a šifrovanou DB. Pages workflow
+připraví veřejný artefakt z `web/` a přidá pouze šifrovanou databázi.
 
 ## Android preview na PC bez IDE
 
@@ -52,6 +54,14 @@ python3 scripts/preview_android.py --reuse-apk
 ```
 
 Otevře se Android emulátor s aplikací **Inženýři Preview**. Je oddělená od běžné
-aplikace a zachovává vlastní data mezi sestaveními. Nic se necommituje ani nepushuje.
-První setup stáhne několik GB; Android Studio není potřeba.
+aplikace a zachovává vlastní data mezi sestaveními. Nic se necommituje ani
+nepushuje. První setup stáhne několik GB; Android Studio není potřeba.
 Podrobnosti a řešení problémů jsou v [návodu](docs/android-preview.md).
+
+## Lokální editor databáze
+
+Spusť `python3 script.py server` (nebo napiš `server` v nabídce správce) a
+otevři vypsaný odkaz v prohlížeči. Přehledný editor umožňuje přidávat,
+upravovat, duplikovat a mazat úkoly, testy i akce včetně času a procvičování.
+Ukládá lokální privátní i šifrovanou databázi. Zveřejnění provedeš samostatně
+příkazem `commit`. Podrobnosti jsou v [návodu k editoru](docs/editor.md).

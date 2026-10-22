@@ -1,10 +1,18 @@
 // Shared reader preferences; no password or encryption key is persisted here.
 function readPreference(name, fallback = false) {
-  try { const value = localStorage.getItem(`inzenyri:${name}`); return value === null ? fallback : value === "true"; }
-  catch { return fallback; }
+  try {
+    const value = localStorage.getItem(`inzenyri:${name}`);
+    return value === null ? fallback : value === "true";
+  } catch {
+    return fallback;
+  }
 }
 function writePreference(name, value) {
-  try { localStorage.setItem(`inzenyri:${name}`, String(value)); } catch { /* Storage may be disabled. */ }
+  try {
+    localStorage.setItem(`inzenyri:${name}`, String(value));
+  } catch {
+    /* Storage may be disabled. */
+  }
 }
 
 const ENCRYPTED_DATA_URL = "data.enc.json";
@@ -26,7 +34,11 @@ const CAROUSEL_LISTS = [
 let unlockedData = null;
 let passwordManagerAutoLoginAllowed = true;
 const doneItems = new Set();
-let visibleCalendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let visibleCalendarMonth = new Date(
+  new Date().getFullYear(),
+  new Date().getMonth(),
+  1,
+);
 let selectedCalendarDay = localDateKey(new Date());
 
 function localDateKey(date) {
@@ -66,13 +78,16 @@ function validateEnvelope(value) {
 
 async function decryptEnvelope(envelope, password) {
   const { salt, iv, ciphertext } = validateEnvelope(envelope);
-  const material = typeof password === "string" ? await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveKey"],
-  ) : password;
+  const material =
+    typeof password === "string"
+      ? await crypto.subtle.importKey(
+          "raw",
+          new TextEncoder().encode(password),
+          "PBKDF2",
+          false,
+          ["deriveKey"],
+        )
+      : password;
   const key = await crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
@@ -96,8 +111,13 @@ async function decryptEnvelope(envelope, password) {
   if (!parsed || !Array.isArray(parsed.tasks))
     throw new Error("Rozšifrovaná data mají neplatnou strukturu.");
   for (const item of parsed.tasks)
-    for (const quiz of [item?.quiz, ...(Array.isArray(item?.quizzes) ? item.quizzes : [])])
-      for (const question of Array.isArray(quiz?.questions) ? quiz.questions : [])
+    for (const quiz of [
+      item?.quiz,
+      ...(Array.isArray(item?.quizzes) ? item.quizzes : []),
+    ])
+      for (const question of Array.isArray(quiz?.questions)
+        ? quiz.questions
+        : [])
         if (question?.type === "binary") question.type = "choice";
   return {
     keyMaterial: material,
@@ -148,9 +168,11 @@ function stableItemHash(value) {
     first = Math.imul(first ^ code, 2654435761);
     second = Math.imul(second ^ code, 1597334677);
   }
-  first = Math.imul(first ^ (first >>> 16), 2246822507) ^
+  first =
+    Math.imul(first ^ (first >>> 16), 2246822507) ^
     Math.imul(second ^ (second >>> 13), 3266489909);
-  second = Math.imul(second ^ (second >>> 16), 2246822507) ^
+  second =
+    Math.imul(second ^ (second >>> 16), 2246822507) ^
     Math.imul(first ^ (first >>> 13), 3266489909);
   return `${(second >>> 0).toString(36)}${(first >>> 0).toString(36)}`;
 }
@@ -184,7 +206,8 @@ function restoreDoneItems(tasks, preserveCurrent = false) {
   for (const item of tasks) {
     const key = itemKey(item);
     validKeys.add(key);
-    if (key !== legacyItemKey(item)) legacyToStableKey.set(legacyItemKey(item), key);
+    if (key !== legacyItemKey(item))
+      legacyToStableKey.set(legacyItemKey(item), key);
   }
   let saved = [];
   try {
@@ -198,8 +221,13 @@ function restoreDoneItems(tasks, preserveCurrent = false) {
     saved = [];
   }
   if (preserveCurrent) {
-    saved = [...new Set([...saved, ...doneItems].map(key => legacyToStableKey.get(key) || key))]
-      .filter(key => validKeys.has(key));
+    saved = [
+      ...new Set(
+        [...saved, ...doneItems].map(
+          (key) => legacyToStableKey.get(key) || key,
+        ),
+      ),
+    ].filter((key) => validKeys.has(key));
   }
   doneItems.clear();
   saved.forEach((key) => doneItems.add(key));
@@ -220,32 +248,55 @@ function closeAiReviewBubble() {
 // Delegation also handles the carousel's cloned cards.
 document.addEventListener("click", (event) => {
   const badge = event.target.closest?.(".ai-review-badge");
-  if (!badge || badge === aiReviewAnchor) { closeAiReviewBubble(); return; }
+  if (!badge || badge === aiReviewAnchor) {
+    closeAiReviewBubble();
+    return;
+  }
   const name = badge.dataset.aiName;
   if (!["ChatGPT", "Claude", "Gemini", "DeepSeek"].includes(name)) return;
   closeAiReviewBubble();
   const bubble = document.getElementById("aiReviewBubble");
   bubble.textContent = `Úkol byl zkontrolován pomocí ${name}.`;
   bubble.hidden = false;
-  const anchor = badge.getBoundingClientRect(), bounds = bubble.getBoundingClientRect();
+  const anchor = badge.getBoundingClientRect(),
+    bounds = bubble.getBoundingClientRect();
   const center = anchor.left + anchor.width / 2;
-  const left = Math.max(12, Math.min(center - bounds.width / 2, window.innerWidth - bounds.width - 12));
+  const left = Math.max(
+    12,
+    Math.min(center - bounds.width / 2, window.innerWidth - bounds.width - 12),
+  );
   const below = anchor.top < bounds.height + 20;
   bubble.classList.toggle("is-below", below);
   bubble.style.left = `${left}px`;
   bubble.style.top = `${below ? anchor.bottom + 12 : anchor.top - bounds.height - 12}px`;
-  bubble.style.setProperty("--pointer-x", `${Math.max(18, Math.min(center - left, bounds.width - 18))}px`);
+  bubble.style.setProperty(
+    "--pointer-x",
+    `${Math.max(18, Math.min(center - left, bounds.width - 18))}px`,
+  );
   badge.setAttribute("aria-describedby", bubble.id);
   aiReviewAnchor = badge;
 });
-document.addEventListener("scroll", closeAiReviewBubble, { capture: true, passive: true });
+document.addEventListener("scroll", closeAiReviewBubble, {
+  capture: true,
+  passive: true,
+});
 window.addEventListener("resize", closeAiReviewBubble);
-document.addEventListener("keydown", event => { if (event.key === "Escape") closeAiReviewBubble(); });
-document.addEventListener("focusin", event => { if (aiReviewAnchor && !aiReviewAnchor.contains(event.target)) closeAiReviewBubble(); });
-document.addEventListener("visibilitychange", () => { if (document.hidden) closeAiReviewBubble(); });
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeAiReviewBubble();
+});
+document.addEventListener("focusin", (event) => {
+  if (aiReviewAnchor && !aiReviewAnchor.contains(event.target))
+    closeAiReviewBubble();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) closeAiReviewBubble();
+});
 
 function itemTime(item) {
-  return typeof item.time === "string" && /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(item.time) ? item.time : "";
+  return typeof item.time === "string" &&
+    /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(item.time)
+    ? item.time
+    : "";
 }
 
 function createItem(item, index) {
@@ -305,7 +356,12 @@ function createItem(item, index) {
     solution.hidden = true;
     renderFormattedText(solution, item.solution);
     if (itemType(item) === "task" && Array.isArray(item.aiReviews)) {
-      const names = { chatgpt: "ChatGPT", claude: "Claude", gemini: "Gemini", deepseek: "DeepSeek" };
+      const names = {
+        chatgpt: "ChatGPT",
+        claude: "Claude",
+        gemini: "Gemini",
+        deepseek: "DeepSeek",
+      };
       const badges = document.createElement("div");
       badges.className = "ai-reviews";
       badges.setAttribute("aria-label", "AI kontrola označená maintainerem");
@@ -315,7 +371,10 @@ function createItem(item, index) {
         badge.type = "button";
         badge.className = "ai-review-badge";
         badge.dataset.aiName = name;
-        badge.setAttribute("aria-label", `Úkol byl zkontrolován pomocí ${name}`);
+        badge.setAttribute(
+          "aria-label",
+          `Úkol byl zkontrolován pomocí ${name}`,
+        );
         const logo = document.createElement("img");
         logo.src = `icons/ai/${key}.svg`;
         logo.alt = "";
@@ -346,7 +405,8 @@ function createItem(item, index) {
     article.append(quizButton);
   }
   checkbox.addEventListener("change", () => {
-    if (checkbox.checked) doneItems.add(key); else doneItems.delete(key);
+    if (checkbox.checked) doneItems.add(key);
+    else doneItems.delete(key);
     saveDoneItems();
     const carousel = article.closest(".items");
     if (carousel?.completeItem) {
@@ -366,7 +426,8 @@ function render() {
     .sort(
       (a, b) =>
         (a.date ?? Infinity) - (b.date ?? Infinity) ||
-        itemTime(a.item).localeCompare(itemTime(b.item)) || a.index - b.index,
+        itemTime(a.item).localeCompare(itemTime(b.item)) ||
+        a.index - b.index,
     );
   renderCalendar(active);
   for (const [type, [listId, countId]] of Object.entries(CATEGORIES)) {
@@ -438,7 +499,9 @@ function renderCalendar(active) {
     }
     const date = new Date(year, month, dayNumber),
       key = localDateKey(date),
-      entries = active.filter(({ date: due }) => due && localDateKey(due) === key),
+      entries = active.filter(
+        ({ date: due }) => due && localDateKey(due) === key,
+      ),
       dots = document.createElement("span");
     button.classList.toggle("is-selected", key === selectedCalendarDay);
     button.classList.toggle("is-today", key === todayKey);
@@ -448,11 +511,13 @@ function renderCalendar(active) {
     );
     button.append(document.createTextNode(String(dayNumber)));
     dots.className = "calendar-dots";
-    [...new Set(entries.map(({ item }) => itemType(item)))].slice(0, 3).forEach((type) => {
-      const dot = document.createElement("span");
-      dot.className = `calendar-dot ${type}`;
-      dots.append(dot);
-    });
+    [...new Set(entries.map(({ item }) => itemType(item)))]
+      .slice(0, 3)
+      .forEach((type) => {
+        const dot = document.createElement("span");
+        dot.className = `calendar-dot ${type}`;
+        dots.append(dot);
+      });
     button.append(dots);
     button.addEventListener("click", () => {
       selectedCalendarDay = key;
@@ -476,7 +541,9 @@ function renderCalendar(active) {
     ({ date }) => date && localDateKey(date) === selectedCalendarDay,
   );
   if (selectedEntries.length) {
-    selectedEntries.forEach(({ item, index }) => list.append(createItem(item, index)));
+    selectedEntries.forEach(({ item, index }) =>
+      list.append(createItem(item, index)),
+    );
   } else {
     const empty = document.createElement("p");
     empty.className = "calendar-empty";
@@ -491,7 +558,9 @@ function renderCalendar(active) {
       undatedList = document.createElement("div");
     undatedTitle.textContent = "Bez data";
     undatedList.className = "calendar-agenda-list";
-    undated.forEach(({ item, index }) => undatedList.append(createItem(item, index)));
+    undated.forEach(({ item, index }) =>
+      undatedList.append(createItem(item, index)),
+    );
     agenda.append(undatedTitle, undatedList);
   }
 }
@@ -517,7 +586,9 @@ function initCarousels() {
     const distanceFromCenter = (card) => {
       const listBox = list.getBoundingClientRect(),
         cardBox = card.getBoundingClientRect();
-      return cardBox.left + cardBox.width / 2 - (listBox.left + listBox.width / 2);
+      return (
+        cardBox.left + cardBox.width / 2 - (listBox.left + listBox.width / 2)
+      );
     };
     const index = () => {
       const allCards = cards();
@@ -791,8 +862,16 @@ function shuffledQuestions(questions) {
 }
 
 function practiceSets(item) {
-  return [item?.quiz, ...(Array.isArray(item?.quizzes) ? item.quizzes : [])]
-    .filter(quiz => Array.isArray(quiz?.questions) && quiz.questions.some(q => q && typeof q === "object" && !Array.isArray(q)));
+  return [
+    item?.quiz,
+    ...(Array.isArray(item?.quizzes) ? item.quizzes : []),
+  ].filter(
+    (quiz) =>
+      Array.isArray(quiz?.questions) &&
+      quiz.questions.some(
+        (q) => q && typeof q === "object" && !Array.isArray(q),
+      ),
+  );
 }
 function quizAction(title, action) {
   const button = document.createElement("button");
@@ -822,31 +901,73 @@ async function openQuiz(itemIndex, pushHistory = true) {
     empty.textContent = "Pro tento test zatím nejsou připravené žádné kvízy.";
     root.append(empty);
   }
-  const identities = await Promise.all(sets.map((quiz, index) => PracticeProgress.identity(itemKey(item), quiz, index, sets)));
+  const identities = await Promise.all(
+    sets.map((quiz, index) =>
+      PracticeProgress.identity(itemKey(item), quiz, index, sets),
+    ),
+  );
   if (quizState !== selection || !unlockedData) return;
   sets.forEach((quiz, index) => {
-    const title = String(quiz.title || (index ? `Kvíz ${index + 1}` : "Základní procvičování"));
+    const title = String(
+      quiz.title || (index ? `Kvíz ${index + 1}` : "Základní procvičování"),
+    );
     const card = document.createElement("section");
     card.className = "practice-set";
-    const label = document.createElement("h2"), count = document.createElement("p");
+    const label = document.createElement("h2"),
+      count = document.createElement("p");
     label.textContent = title;
-    const identity = identities[index], saved = PracticeProgress.read(identity), summary = PracticeProgress.summary(saved);
+    const identity = identities[index],
+      saved = PracticeProgress.read(identity),
+      summary = PracticeProgress.summary(saved);
     count.textContent = `${summary.answered}/${identity.size} zodpovězeno`;
-    card.append(label, summary.complete ? practiceRing(summary.percent) : count);
-    card.append(quizAction(saved && saved.cursor < saved.order.length ? "Pokračovat →" : summary.complete ? "Zobrazit výsledek" : saved ? "Pokračovat →" : "Spustit kvíz →", () => {
-      const allQuestions = quiz.questions.filter(q => q && typeof q === "object" && !Array.isArray(q));
-      const attempt = PracticeProgress.resume(identity, quiz.shuffle === true);
-      quizState = { item, itemIndex, title, identity, attempt, allQuestions, shuffle: quiz.shuffle,
-        questions: attempt.order.map(index => allQuestions[index]),
-        current: attempt.cursor, score: attempt.order.slice(0, attempt.cursor).filter(index => attempt.answers[index] === 1).length,
-        answered: false };
-      document.getElementById("quizBack").textContent = "← Vybrat jiný kvíz";
-      renderQuizQuestion();
-    }));
+    card.append(
+      label,
+      summary.complete ? practiceRing(summary.percent) : count,
+    );
+    card.append(
+      quizAction(
+        saved && saved.cursor < saved.order.length
+          ? "Pokračovat →"
+          : summary.complete
+            ? "Zobrazit výsledek"
+            : saved
+              ? "Pokračovat →"
+              : "Spustit kvíz →",
+        () => {
+          const allQuestions = quiz.questions.filter(
+            (q) => q && typeof q === "object" && !Array.isArray(q),
+          );
+          const attempt = PracticeProgress.resume(
+            identity,
+            quiz.shuffle === true,
+          );
+          quizState = {
+            item,
+            itemIndex,
+            title,
+            identity,
+            attempt,
+            allQuestions,
+            shuffle: quiz.shuffle,
+            questions: attempt.order.map((index) => allQuestions[index]),
+            current: attempt.cursor,
+            score: attempt.order
+              .slice(0, attempt.cursor)
+              .filter((index) => attempt.answers[index] === 1).length,
+            answered: false,
+          };
+          document.getElementById("quizBack").textContent =
+            "← Vybrat jiný kvíz";
+          renderQuizQuestion();
+        },
+      ),
+    );
     root.append(card);
   });
   if (!PracticeProgress.persistent) {
-    const notice = document.createElement("p"); notice.textContent = "Prohlížeč nepovoluje ukládání průběhu. Průběh zůstane jen po dobu otevření stránky.";
+    const notice = document.createElement("p");
+    notice.textContent =
+      "Prohlížeč nepovoluje ukládání průběhu. Průběh zůstane jen po dobu otevření stránky.";
     root.append(notice);
   }
 }
@@ -858,61 +979,112 @@ function closeQuiz(useHistory = true) {
   if (useHistory && location.hash === "#zkouseni") history.back();
 }
 function renderQuizQuestion() {
-  const root = document.getElementById("quizContent"), state = quizState;
+  const root = document.getElementById("quizContent"),
+    state = quizState;
   root.replaceChildren();
   if (!state || state.selecting) return;
   state.answered = false;
   if (state.current >= state.questions.length) {
-    const title = document.createElement("h1"), score = document.createElement("div");
+    const title = document.createElement("h1"),
+      score = document.createElement("div");
     title.textContent = "Výsledek procvičování";
     score.className = "quiz-score";
     score.textContent = `${state.score} / ${state.questions.length}`;
     const summary = PracticeProgress.summary(state.attempt);
-    const percentage = summary.complete ? practiceRing(summary.percent) : document.createElement("p");
-    if (!summary.complete) percentage.textContent = `${summary.answered}/${state.identity.size} zodpovězeno · přeskočené otázky můžeš doplnit při pokračování.`;
+    const percentage = summary.complete
+      ? practiceRing(summary.percent)
+      : document.createElement("p");
+    if (!summary.complete)
+      percentage.textContent = `${summary.answered}/${state.identity.size} zodpovězeno · přeskočené otázky můžeš doplnit při pokračování.`;
     function restart(questions, reset = false) {
-      state.attempt.order = questions.map(question => state.allQuestions.indexOf(question));
+      state.attempt.order = questions.map((question) =>
+        state.allQuestions.indexOf(question),
+      );
       state.attempt.cursor = 0;
       if (reset) state.attempt.answers.fill(-1);
       PracticeProgress.write(state.identity, state.attempt);
-      state.questions = [...questions]; state.current = 0; state.score = 0;
+      state.questions = [...questions];
+      state.current = 0;
+      state.score = 0;
       renderQuizQuestion();
     }
     root.append(title, score, percentage);
-    const failed = state.allQuestions.filter((question, index) => state.attempt.answers[index] !== 1);
-    if (failed.length) root.append(quizAction(`Zopakovat chybné a přeskočené (${failed.length})`, () => restart(failed)));
-    root.append(quizAction("Zkusit celý kvíz znovu", () => restart(state.shuffle ? shuffledQuestions(state.allQuestions) : state.allQuestions, true)),
-      quizAction("Vybrat další kvíz", () => openQuiz(state.itemIndex, false)));
+    const failed = state.allQuestions.filter(
+      (question, index) => state.attempt.answers[index] !== 1,
+    );
+    if (failed.length)
+      root.append(
+        quizAction(`Zopakovat chybné a přeskočené (${failed.length})`, () =>
+          restart(failed),
+        ),
+      );
+    root.append(
+      quizAction("Zkusit celý kvíz znovu", () =>
+        restart(
+          state.shuffle
+            ? shuffledQuestions(state.allQuestions)
+            : state.allQuestions,
+          true,
+        ),
+      ),
+      quizAction("Vybrat další kvíz", () => openQuiz(state.itemIndex, false)),
+    );
     return;
   }
-  const question = state.questions[state.current], progress = document.createElement("p"),
-    heading = document.createElement("h1"), form = document.createElement("form"),
-    answers = document.createElement("div"), actions = document.createElement("div");
+  const question = state.questions[state.current],
+    progress = document.createElement("p"),
+    heading = document.createElement("h1"),
+    form = document.createElement("form"),
+    answers = document.createElement("div"),
+    actions = document.createElement("div");
   progress.className = "quiz-progress";
   progress.textContent = `${state.title} · ${state.current + 1} / ${state.questions.length}`;
   heading.className = "quiz-question";
   const bar = document.createElement("progress");
   bar.className = "quiz-progress-bar";
-  bar.max = state.questions.length; bar.value = state.current;
-  bar.setAttribute("aria-label", `Dokončeno ${state.current} z ${state.questions.length} otázek`);
+  bar.max = state.questions.length;
+  bar.value = state.current;
+  bar.setAttribute(
+    "aria-label",
+    `Dokončeno ${state.current} z ${state.questions.length} otázek`,
+  );
   root.append(bar);
-  renderFormattedText(heading, question.type === "punctuation" ? question.sentence : question.prompt || "Otázka");
-  answers.className = "quiz-options"; actions.className = "quiz-actions";
-  const next = () => { state.current++; renderQuizQuestion(); };
+  renderFormattedText(
+    heading,
+    question.type === "punctuation"
+      ? question.sentence
+      : question.prompt || "Otázka",
+  );
+  answers.className = "quiz-options";
+  actions.className = "quiz-actions";
+  const next = () => {
+    state.current++;
+    renderQuizQuestion();
+  };
   function saveOutcome(outcome) {
     state.attempt.answers[state.attempt.order[state.current]] = outcome;
     state.attempt.cursor = state.current + 1;
     PracticeProgress.write(state.identity, state.attempt);
   }
-  const skip = quizAction("Přeskočit", () => { if (state.answered) return; saveOutcome(2); next(); });
+  const skip = quizAction("Přeskočit", () => {
+    if (state.answered) return;
+    saveOutcome(2);
+    next();
+  });
   if (question.type === "flashcard") {
     root.append(progress, heading);
-    if (typeof question.prompt !== "string" || !question.prompt.trim() ||
-        typeof question.answer !== "string" || !question.answer.trim()) {
+    if (
+      typeof question.prompt !== "string" ||
+      !question.prompt.trim() ||
+      typeof question.answer !== "string" ||
+      !question.answer.trim()
+    ) {
       root.append(document.createTextNode("Neplatná kartička."), skip);
       return;
     }
-    const hint = document.createElement("p"), back = document.createElement("div"), ratings = document.createElement("div");
+    const hint = document.createElement("p"),
+      back = document.createElement("div"),
+      ratings = document.createElement("div");
     hint.textContent = "Vybav si odpověď a potom kartičku otoč.";
     back.className = "quiz-flashcard";
     back.hidden = true;
@@ -927,7 +1099,9 @@ function renderQuizQuestion() {
       state.answered = true;
       if (known) state.score++;
       saveOutcome(known ? 1 : 0);
-      ratings.querySelectorAll("button").forEach(button => button.disabled = true);
+      ratings
+        .querySelectorAll("button")
+        .forEach((button) => (button.disabled = true));
       skip.disabled = true;
       const feedback = document.createElement("div");
       feedback.className = `quiz-feedback ${known ? "correct" : "wrong"}`;
@@ -939,10 +1113,21 @@ function renderQuizQuestion() {
         renderFormattedText(explanation, question.explanation);
         feedback.append(explanation);
       }
-      root.append(feedback, quizAction(state.current + 1 === state.questions.length ? "Zobrazit výsledek" : "Další kartička", next));
+      root.append(
+        feedback,
+        quizAction(
+          state.current + 1 === state.questions.length
+            ? "Zobrazit výsledek"
+            : "Další kartička",
+          next,
+        ),
+      );
       root.lastElementChild.focus({ preventScroll: true });
     }
-    ratings.append(quizAction("Umím", () => rate(true)), quizAction("Ještě procvičit", () => rate(false)));
+    ratings.append(
+      quizAction("Umím", () => rate(true)),
+      quizAction("Ještě procvičit", () => rate(false)),
+    );
     const reveal = quizAction("Otočit kartičku", () => {
       reveal.hidden = true;
       back.hidden = false;
@@ -953,48 +1138,119 @@ function renderQuizQuestion() {
     return;
   }
   const fill = question.type === "fill" ? FillInQuiz.create(question) : null;
-  const valid = (question.type === "fill" ? Boolean(fill) : ["choice", "text", "punctuation"].includes(question.type)) &&
-    (question.type !== "choice" || (Array.isArray(question.options) && question.options.length >= 2 &&
-      Number.isInteger(question.answer) && question.answer >= 0 && question.answer < question.options.length));
-  if (!valid) { root.append(progress, heading, document.createTextNode("Neplatné zadání otázky."), skip); return; }
+  const valid =
+    (question.type === "fill"
+      ? Boolean(fill)
+      : ["choice", "text", "punctuation"].includes(question.type)) &&
+    (question.type !== "choice" ||
+      (Array.isArray(question.options) &&
+        question.options.length >= 2 &&
+        Number.isInteger(question.answer) &&
+        question.answer >= 0 &&
+        question.answer < question.options.length));
+  if (!valid) {
+    root.append(
+      progress,
+      heading,
+      document.createTextNode("Neplatné zadání otázky."),
+      skip,
+    );
+    return;
+  }
   if (question.type === "choice") {
     question.options.forEach((option, index) => {
-      const label = document.createElement("label"), radio = document.createElement("input"), text = document.createElement("span");
-      label.className = "quiz-option"; radio.type = "radio"; radio.name = "answer"; radio.value = String(index); radio.required = true;
-      radio.addEventListener("change", () => { if (!state.answered) form.requestSubmit(); });
-      renderFormattedText(text, String(option)); label.append(radio, text); answers.append(label);
+      const label = document.createElement("label"),
+        radio = document.createElement("input"),
+        text = document.createElement("span");
+      label.className = "quiz-option";
+      radio.type = "radio";
+      radio.name = "answer";
+      radio.value = String(index);
+      radio.required = true;
+      radio.addEventListener("change", () => {
+        if (!state.answered) form.requestSubmit();
+      });
+      renderFormattedText(text, String(option));
+      label.append(radio, text);
+      answers.append(label);
     });
   } else if (fill) {
     answers.append(fill.element);
   } else {
-    const input = document.createElement("textarea"); input.className = "quiz-text"; input.rows = 3;
-    input.name = "answerText"; input.required = true; input.autocomplete = "off";
-    input.setAttribute("aria-label", "Odpověď"); input.placeholder = "Napiš odpověď…";
-    if (question.type === "punctuation") input.value = String(question.sentence || "");
+    const input = document.createElement("textarea");
+    input.className = "quiz-text";
+    input.rows = 3;
+    input.name = "answerText";
+    input.required = true;
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", "Odpověď");
+    input.placeholder = "Napiš odpověď…";
+    if (question.type === "punctuation")
+      input.value = String(question.sentence || "");
     answers.append(input);
   }
-  const submit = document.createElement("button"); submit.type = "submit"; submit.className = "quiz-primary"; submit.textContent = "Vyhodnotit";
-  actions.append(submit, skip); form.append(answers, actions); root.append(progress, heading, form);
-  form.addEventListener("submit", event => {
-    event.preventDefault(); if (state.answered || (fill && !fill.complete())) return; state.answered = true;
-    const data = new FormData(form), written = question.type !== "choice",
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "quiz-primary";
+  submit.textContent = "Vyhodnotit";
+  actions.append(submit, skip);
+  form.append(answers, actions);
+  root.append(progress, heading, form);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (state.answered || (fill && !fill.complete())) return;
+    state.answered = true;
+    const data = new FormData(form),
+      written = question.type !== "choice",
       value = written ? data.get("answerText") : Number(data.get("answer")),
-      expected = Array.isArray(question.answers) ? question.answers : [question.answer],
-      normalize = question.type === "punctuation" ? normalizePunctuationAnswer : normalizeWrittenAnswer,
-      accepted = fill ? fill.correct() : written ? expected.some(answer => normalize(value, question.ignoreCase === true) === normalize(answer, question.ignoreCase === true)) : value === question.answer;
+      expected = Array.isArray(question.answers)
+        ? question.answers
+        : [question.answer],
+      normalize =
+        question.type === "punctuation"
+          ? normalizePunctuationAnswer
+          : normalizeWrittenAnswer,
+      accepted = fill
+        ? fill.correct()
+        : written
+          ? expected.some(
+              (answer) =>
+                normalize(value, question.ignoreCase === true) ===
+                normalize(answer, question.ignoreCase === true),
+            )
+          : value === question.answer;
     if (accepted) state.score++;
     saveOutcome(accepted ? 1 : 0);
-    form.querySelectorAll("input,textarea,button").forEach(input => input.disabled = true);
-    const feedback = document.createElement("div"); feedback.className = `quiz-feedback ${accepted ? "correct" : "wrong"}`;
-    const result = document.createElement("p"); result.textContent = accepted ? "Správně!" : "Tentokrát to nevyšlo.";
+    form
+      .querySelectorAll("input,textarea,button")
+      .forEach((input) => (input.disabled = true));
+    const feedback = document.createElement("div");
+    feedback.className = `quiz-feedback ${accepted ? "correct" : "wrong"}`;
+    const result = document.createElement("p");
+    result.textContent = accepted ? "Správně!" : "Tentokrát to nevyšlo.";
     feedback.append(result);
     if (!accepted) {
       const correct = document.createElement("p");
-      renderFormattedText(correct, `Správná odpověď: ${fill ? fill.solution : written ? expected.join(" / ") : question.options[question.answer]}`);
+      renderFormattedText(
+        correct,
+        `Správná odpověď: ${fill ? fill.solution : written ? expected.join(" / ") : question.options[question.answer]}`,
+      );
       feedback.append(correct);
     }
-    if (question.explanation) { const text = document.createElement("p"); renderFormattedText(text, question.explanation); feedback.append(text); }
-    root.append(feedback, quizAction(state.current + 1 === state.questions.length ? "Zobrazit výsledek" : "Další otázka", next));
+    if (question.explanation) {
+      const text = document.createElement("p");
+      renderFormattedText(text, question.explanation);
+      feedback.append(text);
+    }
+    root.append(
+      feedback,
+      quizAction(
+        state.current + 1 === state.questions.length
+          ? "Zobrazit výsledek"
+          : "Další otázka",
+        next,
+      ),
+    );
     root.lastElementChild.focus({ preventScroll: true });
   });
 }
@@ -1068,7 +1324,9 @@ unlockForm.addEventListener("submit", async (event) => {
       `DB ${unlockedData.dbVersion}`;
     document.getElementById("authView").hidden = true;
     document.getElementById("app").hidden = false;
-    if (response.headers.get("X-Inzenyri-Offline") === "1") document.getElementById("refreshStatus").textContent = "Jsi offline · používáš poslední uloženou databázi.";
+    if (response.headers.get("X-Inzenyri-Offline") === "1")
+      document.getElementById("refreshStatus").textContent =
+        "Jsi offline · používáš poslední uloženou databázi.";
     if (window.PasswordCredential && navigator.credentials?.store) {
       try {
         await navigator.credentials.store(new PasswordCredential(unlockForm));
@@ -1094,11 +1352,18 @@ unlockForm.addEventListener("submit", async (event) => {
 // Autologin používá pouze bezpečné automatické doplnění správce hesel.
 // Aplikace samotná heslo ani odvozený klíč neukládá.
 passwordInput.addEventListener("change", () => {
-  if (passwordManagerAutoLoginAllowed && readPreference("auto-login", true) && passwordInput.value && !unlockButton.disabled) unlockForm.requestSubmit();
+  if (
+    passwordManagerAutoLoginAllowed &&
+    readPreference("auto-login", true) &&
+    passwordInput.value &&
+    !unlockButton.disabled
+  )
+    unlockForm.requestSubmit();
 });
 passwordInput.addEventListener("animationstart", (event) => {
   if (
-    passwordManagerAutoLoginAllowed && readPreference("auto-login", true) &&
+    passwordManagerAutoLoginAllowed &&
+    readPreference("auto-login", true) &&
     event.animationName === "password-autofill" &&
     passwordInput.value &&
     !unlockButton.disabled
@@ -1107,7 +1372,8 @@ passwordInput.addEventListener("animationstart", (event) => {
 });
 
 async function tryPasswordManagerLogin() {
-  if (!passwordManagerAutoLoginAllowed || !readPreference("auto-login", true)) return;
+  if (!passwordManagerAutoLoginAllowed || !readPreference("auto-login", true))
+    return;
   if (
     !window.PasswordCredential ||
     !navigator.credentials?.get ||
@@ -1129,19 +1395,21 @@ async function tryPasswordManagerLogin() {
 }
 
 document.getElementById("lockButton").addEventListener("click", showLocked);
-document
-  .getElementById("quizBack")
-  .addEventListener("click", () => {
-    if (quizState && !quizState.selecting) openQuiz(quizState.itemIndex, false);
-    else closeQuiz();
-  });
+document.getElementById("quizBack").addEventListener("click", () => {
+  if (quizState && !quizState.selecting) openQuiz(quizState.itemIndex, false);
+  else closeQuiz();
+});
 window.addEventListener("popstate", () => {
   if (quizState && location.hash !== "#zkouseni") closeQuiz(false);
 });
 const darkModeToggle = document.getElementById("darkModeToggle");
 function setDarkMode(enabled) {
   document.body.classList.toggle("dark", enabled);
-  try { localStorage.setItem("darkMode", String(enabled)); } catch { /* Storage may be disabled. */ }
+  try {
+    localStorage.setItem("darkMode", String(enabled));
+  } catch {
+    /* Storage may be disabled. */
+  }
   darkModeToggle.textContent = enabled ? "☀" : "☾";
 }
 darkModeToggle.addEventListener("click", () =>
@@ -1165,6 +1433,10 @@ document.getElementById("calendarNext").addEventListener("click", () => {
   selectedCalendarDay = localDateKey(visibleCalendarMonth);
   render();
 });
-try { setDarkMode(localStorage.getItem("darkMode") === "true"); } catch { setDarkMode(false); }
+try {
+  setDarkMode(localStorage.getItem("darkMode") === "true");
+} catch {
+  setDarkMode(false);
+}
 initCarousels();
 window.addEventListener("DOMContentLoaded", tryPasswordManagerLogin);

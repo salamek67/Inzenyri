@@ -14,12 +14,16 @@ ENC = ROOT / "data.enc.json"
 PRIVATE = PRIVATE_DIR / "data.private.json"
 PASSWORD_FILE = PRIVATE_DIR / ".inzenyri-password"
 # Keep existing local checkouts usable after moving the private files.
-for legacy_name, destination in (("data.private.json", PRIVATE), (".inzenyri-password", PASSWORD_FILE)):
+for legacy_name, destination in (
+    ("data.private.json", PRIVATE),
+    (".inzenyri-password", PASSWORD_FILE),
+):
     legacy = ROOT / legacy_name
     if legacy.exists() and not destination.exists():
         legacy.rename(destination)
         destination.chmod(0o600)
 APP = WEB / "js" / "app.js"
+EDITOR_SERVER = ROOT / "scripts" / "editor_server.py"
 ANDROID_GRADLE = ROOT / "app" / "build.gradle.kts"
 CHANGELOG = ROOT / "CHANGELOG.md"
 GH_CONFIG_DIR = Path.home() / ".config" / "gh-inzenyri"
@@ -42,6 +46,7 @@ COMMANDS = (
     "github-status",
     "commit",
     "bump",
+    "server",
     "help",
     "clear",
     "quit",
@@ -72,8 +77,14 @@ def github_login():
     try:
         github_cli(
             [
-                "auth", "login", "--hostname", "github.com", "--web",
-                "--git-protocol", "ssh", "--skip-ssh-key",
+                "auth",
+                "login",
+                "--hostname",
+                "github.com",
+                "--web",
+                "--git-protocol",
+                "ssh",
+                "--skip-ssh-key",
             ],
             check=True,
         )
@@ -152,7 +163,8 @@ def logo():
         if ENC.exists()
         else style("○ data.enc.json chybí", "33")
     )
-    print(f"  {state}   {muted('Tab = doplnit · help = nápověda')}\n")
+    print(f"  {state}   {muted('Tab = doplnit · help = nápověda')}")
+    print(f"  {accent('server')}  {muted('→ spustit lokální editor v prohlížeči')}\n")
 
 
 def cli_error(message):
@@ -189,7 +201,8 @@ def valid_fill_question(question):
         and isinstance(answers, list)
         and 1 <= len(answers) <= 20
         and all(isinstance(answer, str) and answer.strip() for answer in answers)
-        and re.findall(r"\{\{([1-9][0-9]*)\}\}", template) == [str(i) for i in range(1, len(answers) + 1)]
+        and re.findall(r"\{\{([1-9][0-9]*)\}\}", template)
+        == [str(i) for i in range(1, len(answers) + 1)]
     )
 
 
@@ -203,7 +216,11 @@ def normalize(value):
     seen_ids = set()
     for item in value["tasks"]:
         item_id = item.get("id")
-        if not isinstance(item_id, str) or not item_id.strip() or item_id.strip() in seen_ids:
+        if (
+            not isinstance(item_id, str)
+            or not item_id.strip()
+            or item_id.strip() in seen_ids
+        ):
             item_id = str(uuid.uuid4())
             while item_id in seen_ids:
                 item_id = str(uuid.uuid4())
@@ -212,9 +229,13 @@ def normalize(value):
         item["id"] = item_id
         seen_ids.add(item_id)
         extra_quizzes = item.get("quizzes", [])
-        if not isinstance(extra_quizzes, list) or not all(isinstance(q, dict) for q in extra_quizzes):
+        if not isinstance(extra_quizzes, list) or not all(
+            isinstance(q, dict) for q in extra_quizzes
+        ):
             raise DataError("Pole quizzes musí být seznam kvízů.")
-        quizzes = ([item["quiz"]] if isinstance(item.get("quiz"), dict) else []) + extra_quizzes
+        quizzes = (
+            [item["quiz"]] if isinstance(item.get("quiz"), dict) else []
+        ) + extra_quizzes
         for quiz in quizzes:
             questions = quiz.get("questions", [])
             if not isinstance(questions, list):
@@ -222,13 +243,25 @@ def normalize(value):
             for question in questions:
                 if isinstance(question, dict) and question.get("type") == "binary":
                     question["type"] = "choice"
-                if isinstance(question, dict) and question.get("type") == "fill" and not valid_fill_question(question):
-                    raise DataError("Neplatná doplňovací otázka: použij {{1}}, {{2}}, … a odpovědi ve stejném pořadí.")
-                if isinstance(question, dict) and question.get("type") == "flashcard" and not all(
-                    isinstance(question.get(field), str) and question[field].strip()
-                    for field in ("prompt", "answer")
+                if (
+                    isinstance(question, dict)
+                    and question.get("type") == "fill"
+                    and not valid_fill_question(question)
                 ):
-                    raise DataError("Kartička musí mít vyplněnou přední i zadní stranu.")
+                    raise DataError(
+                        "Neplatná doplňovací otázka: použij {{1}}, {{2}}, … a odpovědi ve stejném pořadí."
+                    )
+                if (
+                    isinstance(question, dict)
+                    and question.get("type") == "flashcard"
+                    and not all(
+                        isinstance(question.get(field), str) and question[field].strip()
+                        for field in ("prompt", "answer")
+                    )
+                ):
+                    raise DataError(
+                        "Kartička musí mít vyplněnou přední i zadní stranu."
+                    )
     return {"tasks": value["tasks"]}
 
 
@@ -534,7 +567,9 @@ def open_data():
 
 def save(data, password, db_version=None):
     data = normalize(data)
-    data["tasks"].sort(key=lambda x: (parse_date(x.get("date", "")) or date.max, item_time(x)))
+    data["tasks"].sort(
+        key=lambda x: (parse_date(x.get("date", "")) or date.max, item_time(x))
+    )
     encrypted = envelope(data, password, db_version)
     atomic_write(PRIVATE, data)
     atomic_write(ENC, encrypted)
@@ -628,18 +663,33 @@ def build_practice_question(number, count):
         question = {"type": "flashcard", "prompt": prompt, "answer": answer}
     elif kind == "fill":
         prompt = ask_multiline("Zadání otázky")
-        template = ask_multiline("Text s políčky {{1}}, {{2}}, … (např. {{1}} H₂ + {{2}} O₂ → {{3}} H₂O)")
-        answers = [value.strip() for value in ask("Správné hodnoty políček v pořadí (odděl |)").split("|")]
+        template = ask_multiline(
+            "Text s políčky {{1}}, {{2}}, … (např. {{1}} H₂ + {{2}} O₂ → {{3}} H₂O)"
+        )
+        answers = [
+            value.strip()
+            for value in ask("Správné hodnoty políček v pořadí (odděl |)").split("|")
+        ]
         question = {
-            "type": "fill", "prompt": prompt, "template": template, "answers": answers,
-            "numeric": ask("Vyplňovat jen celá nezáporná čísla? [a/n]").lower() in {"a", "ano"},
+            "type": "fill",
+            "prompt": prompt,
+            "template": template,
+            "answers": answers,
+            "numeric": ask("Vyplňovat jen celá nezáporná čísla? [a/n]").lower()
+            in {"a", "ano"},
         }
         if not prompt or not valid_fill_question(question):
-            raise DataError("Vyplň zadání, očíslovaná políčka {{1}}, {{2}}, … a jednu odpověď pro každé políčko.")
-        if question["numeric"] and any(not re.fullmatch(r"[0-9]+", answer) for answer in answers):
+            raise DataError(
+                "Vyplň zadání, očíslovaná políčka {{1}}, {{2}}, … a jednu odpověď pro každé políčko."
+            )
+        if question["numeric"] and any(
+            not re.fullmatch(r"[0-9]+", answer) for answer in answers
+        ):
             raise DataError("Číselná políčka musí mít odpovědi zapsané číslicemi.")
         if not question["numeric"]:
-            question["ignoreCase"] = ask("Ignorovat velikost písmen? [a/n]").lower() in {"a", "ano"}
+            question["ignoreCase"] = ask(
+                "Ignorovat velikost písmen? [a/n]"
+            ).lower() in {"a", "ano"}
     elif kind == "text":
         prompt = ask_multiline("Znění otázky")
         answers = [
@@ -701,7 +751,9 @@ def build_practice():
     )
     while True:
         try:
-            count = ask_number("Počet otázek (Enter nebo 0 = přeskočit)", 0, 100, default=0)
+            count = ask_number(
+                "Počet otázek (Enter nebo 0 = přeskočit)", 0, 100, default=0
+            )
             break
         except DataError as exc:
             cli_error(exc)
@@ -724,12 +776,16 @@ def build_practice():
 def build_practice_sets():
     quizzes = []
     while True:
-        title = ask("Název kvízu (např. Sčítání; prázdné = Základní procvičování)").strip()
+        title = ask(
+            "Název kvízu (např. Sčítání; prázdné = Základní procvičování)"
+        ).strip()
         quiz = build_practice()
         if not quiz:
             break
         quiz["id"] = str(uuid.uuid4())
-        quiz["title"] = title or ("Základní procvičování" if not quizzes else f"Kvíz {len(quizzes) + 1}")
+        quiz["title"] = title or (
+            "Základní procvičování" if not quizzes else f"Kvíz {len(quizzes) + 1}"
+        )
         quizzes.append(quiz)
         if ask("Přidat k tomuto testu další kvíz? [a/n]").lower() not in {"a", "ano"}:
             break
@@ -745,15 +801,25 @@ def set_practice_sets(item, quizzes):
             item["quizzes"] = quizzes[1:]
 
 
-AI_REVIEW_NAMES = {"chatgpt": "ChatGPT", "claude": "Claude", "gemini": "Gemini", "deepseek": "DeepSeek"}
+AI_REVIEW_NAMES = {
+    "chatgpt": "ChatGPT",
+    "claude": "Claude",
+    "gemini": "Gemini",
+    "deepseek": "DeepSeek",
+}
 
 
 def choose_ai_reviews(current=None):
     current = current if isinstance(current, list) else []
     selected = [key for key in AI_REVIEW_NAMES if key in current]
-    print("  AI kontrola: " + (", ".join(AI_REVIEW_NAMES[key] for key in selected) or "žádná"))
+    print(
+        "  AI kontrola: "
+        + (", ".join(AI_REVIEW_NAMES[key] for key in selected) or "žádná")
+    )
     while True:
-        value = ask("AI kontrola [1] ChatGPT / [2] Claude / [3] Gemini / [4] DeepSeek (čísla čárkou, Enter ponechat, - odebrat)").strip()
+        value = ask(
+            "AI kontrola [1] ChatGPT / [2] Claude / [3] Gemini / [4] DeepSeek (čísla čárkou, Enter ponechat, - odebrat)"
+        ).strip()
         if not value:
             return selected
         if value == "-":
@@ -761,18 +827,27 @@ def choose_ai_reviews(current=None):
         parts = value.replace(" ", ",").split(",")
         choices = {part for part in parts if part}
         if choices and choices <= {"1", "2", "3", "4"}:
-            return [key for i, key in enumerate(AI_REVIEW_NAMES, 1) if str(i) in choices]
+            return [
+                key for i, key in enumerate(AI_REVIEW_NAMES, 1) if str(i) in choices
+            ]
         cli_error("Vyber čísla 1–4, Enter nebo -.")
 
 
 def item_time(item):
     value = item.get("time", "")
-    return value if isinstance(value, str) and re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value) else ""
+    return (
+        value
+        if isinstance(value, str)
+        and re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value)
+        else ""
+    )
 
 
 def validate_time(value):
     if value and not item_time({"time": value}):
-        raise DataError("Neplatný čas. Použij HH:mm (00:00–23:59), nebo ponech celý den.")
+        raise DataError(
+            "Neplatný čas. Použij HH:mm (00:00–23:59), nebo ponech celý den."
+        )
     return value
 
 
@@ -924,10 +999,14 @@ def info(index=None):
 
     item = items[parse_item_index(index, len(items), "Index k zobrazení")]
     heading(item.get("name") or "Bez názvu", TYPES.get(item.get("type"), "Položka"))
-    print(f"  {muted('Datum:')} {item.get('date') or 'neuvedeno'} · {item_time(item) or 'Celý den'}")
+    print(
+        f"  {muted('Datum:')} {item.get('date') or 'neuvedeno'} · {item_time(item) or 'Celý den'}"
+    )
     print(f"  {muted('Popis:')} {item.get('task') or '—'}")
     if item.get("type") == "task" and isinstance(item.get("aiReviews"), list):
-        names = [name for key, name in AI_REVIEW_NAMES.items() if key in item["aiReviews"]]
+        names = [
+            name for key, name in AI_REVIEW_NAMES.items() if key in item["aiReviews"]
+        ]
         if names:
             print(f"  {muted('AI kontrola:')} {', '.join(names)}")
     if item.get("solution"):
@@ -935,7 +1014,9 @@ def info(index=None):
 
     quiz = item.get("quiz")
     for index, extra in enumerate(item.get("quizzes", []), 2):
-        print(f"  {muted('Další kvíz:')} {extra.get('title') or f'Kvíz {index}'} · {len(extra.get('questions', []))} otázek")
+        print(
+            f"  {muted('Další kvíz:')} {extra.get('title') or f'Kvíz {index}'} · {len(extra.get('questions', []))} otázek"
+        )
     questions = quiz.get("questions", []) if isinstance(quiz, dict) else []
     if not questions:
         print(f"  {muted('Procvičování:')} —")
@@ -988,7 +1069,11 @@ def edit(index=None):
     if not parse_date(new_date):
         raise DataError("Neplatné datum.")
     updated["date"] = new_date
-    time_value = validate_time(edit_value("Čas (HH:mm, - = celý den)", item_time(updated), clearable=True).strip())
+    time_value = validate_time(
+        edit_value(
+            "Čas (HH:mm, - = celý den)", item_time(updated), clearable=True
+        ).strip()
+    )
     if time_value:
         updated["time"] = time_value
     else:
@@ -1010,7 +1095,10 @@ def edit(index=None):
     if updated.get("type") == "test" or "quiz" in updated or "quizzes" in updated:
         while True:
             action = (
-                ask("Kvízy [p]onechat / [a] přidat / [u] nahradit všechny / [s]mazat všechny").lower() or "p"
+                ask(
+                    "Kvízy [p]onechat / [a] přidat / [u] nahradit všechny / [s]mazat všechny"
+                ).lower()
+                or "p"
             )
             if action in {"p", "ponechat"}:
                 break
@@ -1018,7 +1106,9 @@ def edit(index=None):
                 set_practice_sets(updated, build_practice_sets())
                 break
             if action in {"a", "pridat", "přidat"}:
-                existing = ([updated["quiz"]] if isinstance(updated.get("quiz"), dict) else []) + updated.get("quizzes", [])
+                existing = (
+                    [updated["quiz"]] if isinstance(updated.get("quiz"), dict) else []
+                ) + updated.get("quizzes", [])
                 set_practice_sets(updated, existing + build_practice_sets())
                 break
             if action in {"s", "smazat"}:
@@ -1124,6 +1214,53 @@ def offer_web_version_bump():
     return new_version
 
 
+def server_version():
+    try:
+        source = EDITOR_SERVER.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise DataError("Soubor scripts/editor_server.py nelze načíst.") from exc
+    match = re.search(r'(?m)^SERVER_VERSION = "(\d+)\.(\d+)\.(\d+)"$', source)
+    if not match:
+        raise DataError("V editor_server.py chybí platná konstanta SERVER_VERSION.")
+    return source, match, tuple(map(int, match.groups()))
+
+
+def offer_server_version_bump():
+    source, match, version = server_version()
+    current = ".".join(map(str, version))
+    if ask(f"Zvýšit verzi lokálního serveru {current}? [a/n]").lower() not in {
+        "a",
+        "ano",
+    }:
+        return None
+    level = {
+        "1": 0,
+        "major": 0,
+        "ma": 0,
+        "2": 1,
+        "minor": 1,
+        "mi": 1,
+        "3": 2,
+        "patch": 2,
+        "p": 2,
+    }.get(ask("Index [1] major / [2] minor / [3] patch").lower())
+    if level is None:
+        raise DataError("Neplatný index verze. Použij 1, 2 nebo 3.")
+    bumped = list(version)
+    bumped[level] += 1
+    for index in range(level + 1, 3):
+        bumped[index] = 0
+    new_version = ".".join(map(str, bumped))
+    updated = (
+        source[: match.start()]
+        + f'SERVER_VERSION = "{new_version}"'
+        + source[match.end() :]
+    )
+    atomic_write_text(EDITOR_SERVER, updated)
+    success(f"Verze lokálního serveru zvýšena: {current} → {new_version}.")
+    return new_version
+
+
 def android_version():
     try:
         source = ANDROID_GRADLE.read_text(encoding="utf-8")
@@ -1142,7 +1279,10 @@ def android_version():
 def offer_android_version_bump(*, release=True, create_tag=False):
     source, match, version = android_version()
     current = ".".join(map(str, version))
-    if ask(f"Zvýšit verzi Android aplikace {current}? [a/n]").lower() not in {"a", "ano"}:
+    if ask(f"Zvýšit verzi Android aplikace {current}? [a/n]").lower() not in {
+        "a",
+        "ano",
+    }:
         return None
 
     if release:
@@ -1151,13 +1291,13 @@ def offer_android_version_bump(*, release=True, create_tag=False):
         except FileNotFoundError as exc:
             raise DataError(
                 "Pro Android release nainstaluj GitHub CLI (gh) a přihlas vyhrazený účet příkazem:\n"
-                f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
+                f"GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com"
             ) from exc
         if auth.returncode:
             detail = (auth.stderr or auth.stdout).strip()
             raise DataError(
                 "Přihlas účet pro releasy příkazem:\n"
-                f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
+                f"GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com"
                 + (f"\n{detail}" if detail else "")
             )
 
@@ -1185,13 +1325,23 @@ def offer_android_version_bump(*, release=True, create_tag=False):
         raise DataError(f"GitHub Release {release_tag} už existuje.")
     if create_tag:
         existing = subprocess.run(
-            ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{release_tag}"], cwd=ROOT
+            ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{release_tag}"],
+            cwd=ROOT,
         )
         if existing.returncode == 0:
-            raise DataError(f"Tag {release_tag} už existuje; verze Androidu nebyla změněna.")
+            raise DataError(
+                f"Tag {release_tag} už existuje; verze Androidu nebyla změněna."
+            )
         if existing.returncode != 1:
-            raise DataError("Nelze ověřit existující Git tagy; verze Androidu nebyla změněna.")
-        subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+            raise DataError(
+                "Nelze ověřit existující Git tagy; verze Androidu nebyla změněna."
+            )
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
     updated = source[: match.start(2)] + new_version + source[match.end(4) :]
     atomic_write_text(ANDROID_GRADLE, updated)
     if create_tag:
@@ -1206,8 +1356,12 @@ def offer_android_version_bump(*, release=True, create_tag=False):
 
 
 def bump():
-    heading("Zvýšit verzi", "Lokální změna verze; pro Android také tag na aktuálním commitu.")
+    heading(
+        "Zvýšit verzi",
+        "Lokální změna verze; pro Android také tag na aktuálním commitu.",
+    )
     offer_web_version_bump()
+    offer_server_version_bump()
     offer_android_version_bump(release=False, create_tag=True)
 
 
@@ -1216,9 +1370,7 @@ def consume_changelog_category(section):
         changelog = CHANGELOG.read_text(encoding="utf-8")
     except OSError as exc:
         raise DataError("Soubor CHANGELOG.md nelze načíst.") from exc
-    section_pattern = re.compile(
-        rf"(?ms)^(## {re.escape(section)})\n(.*?)(?=^## |\Z)"
-    )
+    section_pattern = re.compile(rf"(?ms)^(## {re.escape(section)})\n(.*?)(?=^## |\Z)")
     match = section_pattern.search(changelog)
     if not match:
         raise DataError(f"V CHANGELOG.md chybí část {section}.")
@@ -1264,7 +1416,14 @@ def infer_commit_prefix(changed_paths):
     android_files = {
         ".github/workflows/android.yml",
     }
-    builds_web = any(path in web_files or path == "web" or path.startswith("web/") or path == "vendor" or path.startswith("vendor/") for path in changed_paths)
+    builds_web = any(
+        path in web_files
+        or path == "web"
+        or path.startswith("web/")
+        or path == "vendor"
+        or path.startswith("vendor/")
+        for path in changed_paths
+    )
     builds_android = any(
         path in android_files or path == "app" or path.startswith("app/")
         for path in changed_paths
@@ -1283,7 +1442,10 @@ def ensure_repository_up_to_date():
     try:
         branch = subprocess.run(
             ["git", "branch", "--show-current"],
-            cwd=ROOT, check=True, capture_output=True, text=True,
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         if branch != "main":
             raise DataError(
@@ -1292,14 +1454,30 @@ def ensure_repository_up_to_date():
             )
         print(f"  {accent('›')} Kontroluji aktuálnost vůči origin/main…")
         subprocess.run(
-            ["git", "fetch", "--no-tags", "origin",
-             "+refs/heads/main:refs/remotes/origin/main"],
-            cwd=ROOT, check=True, capture_output=True, text=True,
+            [
+                "git",
+                "fetch",
+                "--no-tags",
+                "origin",
+                "+refs/heads/main:refs/remotes/origin/main",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         counts = subprocess.run(
-            ["git", "rev-list", "--left-right", "--count",
-             "HEAD...refs/remotes/origin/main"],
-            cwd=ROOT, check=True, capture_output=True, text=True,
+            [
+                "git",
+                "rev-list",
+                "--left-right",
+                "--count",
+                "HEAD...refs/remotes/origin/main",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.split()
         ahead, behind = map(int, counts)
     except (subprocess.CalledProcessError, OSError, ValueError) as exc:
@@ -1320,7 +1498,9 @@ def ensure_repository_up_to_date():
             "přitom zachovej rozpracovaná data. Příprava commitu byla zastavena."
         )
     if ahead:
-        success(f"Repozitář obsahuje změny z origin/main; {ahead} lokálních commitů čeká na push.")
+        success(
+            f"Repozitář obsahuje změny z origin/main; {ahead} lokálních commitů čeká na push."
+        )
     else:
         success("Repozitář je aktuální vůči origin/main.")
 
@@ -1354,16 +1534,34 @@ def commit(message=None):
     for line in changed:
         path = line[3:].split(" -> ")[-1].strip('"')
         changed_paths.append(path)
-    touches_web = any(path in web_files or path == ".github/" or path == "web" or path.startswith("web/") or path == "vendor" or path.startswith("vendor/") for path in changed_paths)
+    touches_web = any(
+        path in web_files
+        or path == ".github/"
+        or path == "web"
+        or path.startswith("web/")
+        or path == "vendor"
+        or path.startswith("vendor/")
+        for path in changed_paths
+    )
     touches_android_app = any(
         path == "app" or path.startswith("app/") for path in changed_paths
     )
-    touches_android = touches_android_app or ".github/workflows/android.yml" in changed_paths
+    touches_android = (
+        touches_android_app or ".github/workflows/android.yml" in changed_paths
+    )
     touches_data = "data.enc.json" in changed_paths
+    touches_server = any(
+        path == "scripts/editor_server.py"
+        or path.rstrip("/") == "scripts/editor"
+        or path.startswith("scripts/editor/")
+        for path in changed_paths
+    )
     android_bump = None
     android_previous_version = None
     if touches_web:
         offer_web_version_bump()
+    if touches_server:
+        offer_server_version_bump()
     if touches_android_app:
         android_bump_result = offer_android_version_bump()
         if android_bump_result:
@@ -1375,21 +1573,46 @@ def commit(message=None):
     else:
         print(f"  {style('✓','32')} {muted('Šifrovaná data ověřena; DB se nemění.')}\n")
     candidates = [
-        "web", "scripts", "docs", "README.md", "LICENSE", "data.enc.json", "script.py", "preview.sh",
-        ".gitignore", "AGENTS.md", "CHANGELOG.md", ".github", "app",
-        "index.html", "app.js", "web-settings.js", "web-qr.js", "web-formatting.js",
-        "practice-progress.js", "web-offline.js", "sw.js", "vendor", "favicon.ico",
-        "favicon.png", "apple-touch-icon.png", "requirements.txt",
+        "web",
+        "scripts",
+        "docs",
+        "README.md",
+        "LICENSE",
+        "data.enc.json",
+        "script.py",
+        "preview.sh",
+        ".gitignore",
+        "AGENTS.md",
+        "CHANGELOG.md",
+        ".github",
+        "app",
+        "index.html",
+        "app.js",
+        "web-settings.js",
+        "web-qr.js",
+        "web-formatting.js",
+        "practice-progress.js",
+        "web-offline.js",
+        "sw.js",
+        "vendor",
+        "favicon.ico",
+        "favicon.png",
+        "apple-touch-icon.png",
+        "requirements.txt",
     ]
-    files = [path for path in candidates if (ROOT / path).exists() or subprocess.run(
-        ["git", "ls-files", "--error-unmatch", "--", path], cwd=ROOT,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    ).returncode == 0]
-    message = (
-        message
-        or ask("Zpráva commitu")
-        or "Aktualizace přehledu"
-    ).strip()
+    files = [
+        path
+        for path in candidates
+        if (ROOT / path).exists()
+        or subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", path],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    ]
+    message = (message or ask("Zpráva commitu") or "Aktualizace přehledu").strip()
     if not message.lower().startswith(("[app skip]", "[page skip]", "[ci skip]")):
         message = infer_commit_prefix(changed_paths) + message
     build_web, build_android = commit_build_targets(message)
@@ -1399,7 +1622,9 @@ def commit(message=None):
     android_release_notes = None
     if android_bump:
         if not build_android:
-            raise DataError("Bump Android verze vyžaduje sestavení aplikace. Odstraň prefix [app skip] nebo [ci skip].")
+            raise DataError(
+                "Bump Android verze vyžaduje sestavení aplikace. Odstraň prefix [app skip] nebo [ci skip]."
+            )
         app_entries = consume_changelog_category("Android")
         if not app_entries:
             app_entries = f"- {summary}"
@@ -1408,8 +1633,7 @@ def commit(message=None):
             f"{android_previous_version}...{android_bump}"
         )
         android_release_notes = (
-            f"{app_entries}\n\n"
-            f"**Full Changelog**: {compare_url}"
+            f"{app_entries}\n\n" f"**Full Changelog**: {compare_url}"
         )
     if not build_web and not build_android:
         print(f"  {muted('CI přeskočeno: web ani Android se nebuildí.')}")
@@ -1425,15 +1649,22 @@ def commit(message=None):
     if android_bump:
         github_cli(
             [
-                "release", "create", android_bump,
-                "--title", android_bump,
-                "--notes", android_release_notes,
-                "--target", "main",
+                "release",
+                "create",
+                android_bump,
+                "--title",
+                android_bump,
+                "--notes",
+                android_release_notes,
+                "--target",
+                "main",
             ],
             check=True,
         )
     if android_bump:
-        success("Poznámky releasu byly použity a changelog vyčištěn ve stejném commitu.")
+        success(
+            "Poznámky releasu byly použity a changelog vyčištěn ve stejném commitu."
+        )
 
 
 def help_text():
@@ -1449,7 +1680,14 @@ def help_text():
     command("github-login", "Přihlásit GitHub", "uložit přihlášení pro tento repozitář")
     command("github-status", "GitHub účet", "ověřit přihlášení používané pro releasy")
     command("commit [text]", "Publikovat", "commit a push na GitHub")
-    command("bump", "Zvýšit verzi", "lokální verze a Android tag, bez commitu a releasu")
+    command(
+        "bump", "Zvýšit verzi", "lokální verze a Android tag, bez commitu a releasu"
+    )
+    command(
+        "server [port]",
+        "Editor v prohlížeči",
+        "lokální přidávání a úpravy položek, výchozí port 8765",
+    )
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
     print(f"\n  {muted('Příklady:')} add u · info 2 · edit 2 · delete 2-5\n")
@@ -1487,6 +1725,18 @@ def dispatch(cmd, args=()):
         edit(args[0] if args else None)
     elif cmd in {"d", "delete", "del"}:
         delete(args)
+    elif cmd in {"server", "serve", "web"}:
+        if len(args) > 1 or (
+            args and (not args[0].isdigit() or not 1024 <= int(args[0]) <= 65535)
+        ):
+            raise DataError("Použij server nebo server PORT (1024–65535).")
+        import runpy
+
+        editor = runpy.run_path(str(ROOT / "scripts" / "editor_server.py"))
+        try:
+            editor["serve"](int(args[0]) if args else 8765)
+        except Exception as exc:
+            raise DataError(str(exc)) from exc
     elif cmd == "bump":
         if args:
             raise DataError("Příkaz bump nepřijímá argumenty; verzi vyber v nabídce.")

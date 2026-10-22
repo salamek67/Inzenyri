@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Inženýři · editor</title>
+    <link rel="stylesheet" href="/editor.css" />
+    <script defer src="/marked.js"></script>
+    <script defer src="/purify.js"></script>
+    <script defer src="/editor.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Inženýři, lokální editor"
+        ><span class="brand-mark">i.</span
+        ><span
+          >Inženýři <small id="server-version">Lokální editor</small></span
+        ></a
+      >
+      <div class="top-actions">
+        <span id="connection" class="connection">Připojuji…</span
+        ><button id="theme" class="icon-button" aria-label="Přepnout vzhled">
+          ◐
+        </button>
+      </div>
+    </header>
+    <div id="app" class="workspace" hidden>
+      <aside class="sidebar">
+        <div class="sidebar-heading">
+          <div>
+            <p class="eyebrow">TVŮJ PŘEHLED</p>
+            <h1>Položky <span id="total" class="count">0</span></h1>
+          </div>
+          <button
+            id="reload"
+            class="icon-button"
+            title="Načíst aktuální data"
+            aria-label="Načíst aktuální data"
+          >
+            ↻
+          </button>
+        </div>
+        <button id="new" class="primary full">＋ Přidat položku</button>
+        <label class="search-label"
+          ><span class="sr-only">Hledat položky</span
+          ><input
+            id="search"
+            type="search"
+            placeholder="Hledat název nebo popis…"
+            autocomplete="off"
+          /><kbd>Ctrl K</kbd></label
+        >
+        <nav id="filters" class="filters" aria-label="Druh položky"></nav>
+        <div class="list-toolbar">
+          <span id="list-count"></span
+          ><label
+            ><span class="sr-only">Období</span
+            ><select id="period">
+              <option value="upcoming">Dnešní a nadcházející</option>
+              <option value="all">Všechny položky</option>
+              <option value="past">Minulé položky</option>
+            </select></label
+          >
+        </div>
+        <div id="items" class="items" aria-label="Seznam položek"></div>
+        <div class="sidebar-footer">
+          <span class="status-dot"></span> Ukládá se do tohoto počítače
+          <small>Zveřejnění provedeš příkazem commit.</small>
+        </div>
+      </aside>
+      <main class="main">
+        <section id="empty" class="welcome">
+          <span class="welcome-icon">✎</span>
+          <p class="eyebrow">MÍSTO PRO VŠECHNO DŮLEŽITÉ</p>
+          <h2>Připrav další školní den.</h2>
+          <p>
+            Úkol, písemka nebo společná akce.<br />Vyber položku vlevo, nebo
+            přidej novou.
+          </p>
+          <button id="empty-new" class="primary">＋ První nová položka</button>
+          <div class="shortcut-note">
+            <kbd>Ctrl S</kbd> uložit <span>·</span> <kbd>Ctrl K</kbd> hledat
+          </div>
+        </section>
+        <section id="editor" hidden>
+          <div class="editor-header">
+            <div>
+              <p id="editor-caption" class="eyebrow">NOVÁ POLOŽKA</p>
+              <h2 id="editor-title">Co přidáme?</h2>
+            </div>
+            <div class="editor-tools">
+              <button id="duplicate" class="secondary">Duplikovat</button
+              ><button id="delete" class="danger">Smazat</button>
+            </div>
+          </div>
+          <div class="tabs" role="tablist" aria-label="Zobrazení položky">
+            <button
+              id="edit-tab"
+              role="tab"
+              aria-selected="true"
+              aria-controls="edit-panel"
+            >
+              Upravit</button
+            ><button
+              id="preview-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="preview"
+            >
+              Náhled
+            </button>
+          </div>
+          <form id="item-form">
+            <div id="edit-panel" role="tabpanel" aria-labelledby="edit-tab">
+              <section class="panel">
+                <div
+                  id="type-picker"
+                  class="type-picker"
+                  role="group"
+                  aria-label="Druh položky"
+                ></div>
+                <label class="field"
+                  ><span>Název <span class="required">*</span></span
+                  ><input
+                    id="name"
+                    required
+                    maxlength="300"
+                    placeholder="Např. Matematika · kvadratické rovnice"
+                    autocomplete="off"
+                /></label>
+                <div class="date-row">
+                  <label class="field"
+                    ><span>Datum <span class="required">*</span></span
+                    ><input id="date" type="date" required /></label
+                  ><label class="field time-field"
+                    ><span>Čas <small>volitelné</small></span
+                    ><input id="time" type="time" /></label
+                  ><button id="all-day" type="button" class="secondary">
+                    Celý den
+                  </button>
+                </div>
+                <label class="field"
+                  ><span>Popis <small>volitelné</small></span
+                  ><textarea
+                    id="description"
+                    rows="4"
+                    placeholder="Co se bude probírat? Co si přinést?"
+                  ></textarea>
+                </label>
+                <div id="task-fields">
+                  <label class="field"
+                    ><span>Řešení <small>volitelné · Markdown</small></span
+                    ><textarea
+                      id="solution"
+                      rows="5"
+                      placeholder="Postup, poznámky nebo vypracované řešení…"
+                    ></textarea>
+                  </label>
+                  <fieldset class="ai-reviews">
+                    <legend>AI kontrola <small>volitelné</small></legend>
+                    <div id="ai-options"></div>
+                  </fieldset>
+                </div>
+                <p class="field-note">
+                  Texty podporují Markdown. Výsledek zkontroluješ v náhledu.
+                </p>
+              </section>
+              <section class="panel practice-panel">
+                <div class="section-heading">
+                  <div>
+                    <h3>Procvičování</h3>
+                    <p>Kvízy, doplňování i kartičky na jednom místě.</p>
+                  </div>
+                  <button id="add-quiz" type="button" class="secondary">
+                    ＋ Přidat sadu
+                  </button>
+                </div>
+                <p id="practice-type-note" class="field-note" hidden>
+                  Procvičování se na webu a v aplikaci nabízí pouze u testů.
+                  Existující sady zůstávají zachované.
+                </p>
+                <div id="quizzes"></div>
+              </section>
+            </div>
+            <div
+              id="preview"
+              class="panel preview"
+              role="tabpanel"
+              aria-labelledby="preview-tab"
+              hidden
+            ></div>
+            <footer class="savebar">
+              <div>
+                <strong id="save-state">Nová položka</strong
+                ><small id="save-detail"
+                  >Uložení zahrnuje i šifrovanou databázi.</small
+                >
+              </div>
+              <button id="save" class="primary" type="submit">
+                Uložit položku <kbd>Ctrl S</kbd>
+              </button>
+            </footer>
+          </form>
+        </section>
+      </main>
+    </div>
+    <section id="gate" class="gate" hidden>
+      <div class="panel">
+        <span class="welcome-icon">⌁</span>
+        <h1 id="gate-title">Odemknout databázi</h1>
+        <p id="gate-message">
+          Zadej stejné heslo jako na webu nebo v aplikaci.
+        </p>
+        <form id="unlock-form">
+          <label class="field"
+            ><span>Heslo databáze</span
+            ><input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              required /></label
+          ><button class="primary full">Odemknout editor</button>
+        </form>
+        <button id="gate-retry" class="secondary" hidden>Načíst znovu</button>
+        <p id="gate-error" class="error" role="alert"></p>
+      </div>
+    </section>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="confirm">
+      <form method="dialog">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-message"></p>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary">Zrušit</button
+          ><button id="confirm-yes" value="yes" class="primary">
+            Pokračovat
+          </button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

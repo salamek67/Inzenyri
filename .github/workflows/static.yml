@@ -51,7 +51,9 @@ jobs:
   # Single deploy job since we're just deploying
   deploy:
     needs: commit-policy
-    if: ${{ needs.commit-policy.outputs.skip_page != 'true' && needs.commit-policy.outputs.skip_ci != 'true' }}
+    if:
+      ${{ needs.commit-policy.outputs.skip_page != 'true' &&
+      needs.commit-policy.outputs.skip_ci != 'true' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

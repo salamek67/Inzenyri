@@ -4,10 +4,10 @@
 
 Typ `flashcard` funguje na webu i v Androidu. Nejprve se zobrazí přední strana,
 po stisku **Otočit kartičku** zadní strana a vlastní hodnocení **Umím** nebo
-**Ještě procvičit**. Hodnocení vychází z rozhodnutí uživatele, nikoli automatické
-kontroly odpovědi. Lze také přeskočit a na konci zopakovat neosvojené i přeskočené
-kartičky. Průběh se ukládá stejně jako u ostatních otázek; samotné otočení
-kartičky se nepočítá jako odpověď.
+**Ještě procvičit**. Hodnocení vychází z rozhodnutí uživatele, nikoli
+automatické kontroly odpovědi. Lze také přeskočit a na konci zopakovat
+neosvojené i přeskočené kartičky. Průběh se ukládá stejně jako u ostatních
+otázek; samotné otočení kartičky se nepočítá jako odpověď.
 
 ```json
 {
@@ -19,17 +19,17 @@ kartičky se nepočítá jako odpověď.
 ```
 
 Obě strany jsou povinné a podporují stejné formátování jako ostatní otázky.
-`explanation` je volitelné a zobrazí se po hodnocení. Kartičky lze kombinovat
-s ostatními typy otázek v jednom kvízu a promíchat jejich pořadí.
-V Python správci při sestavování kvízu zvol `[k]artičky`.
-Android editor nadále vytváří jen jednoduchou textovou otázku; sady kartiček
-se připravují ve správci databáze. Web je určený k procvičování, nemá editor sad.
-Starší klienti vyžadují aktualizaci pro správné zobrazení kartiček.
+`explanation` je volitelné a zobrazí se po hodnocení. Kartičky lze kombinovat s
+ostatními typy otázek v jednom kvízu a promíchat jejich pořadí. V Python správci
+při sestavování kvízu zvol `[k]artičky`. Android editor nadále vytváří jen
+jednoduchou textovou otázku; sady kartiček se připravují ve správci databáze.
+Web je určený k procvičování, nemá editor sad. Starší klienti vyžadují
+aktualizaci pro správné zobrazení kartiček.
 
 ## Doplňovací otázky
 
-Typ `fill` je společný pro web i Android. V Python správci jej vytvoříš
-volbou `[d]oplňování` při sestavování kvízu.
+Typ `fill` je společný pro web i Android. V Python správci jej vytvoříš volbou
+`[d]oplňování` při sestavování kvízu.
 
 ```json
 {
@@ -44,27 +44,31 @@ volbou `[d]oplňování` při sestavování kvízu.
 
 - Políčka musí být číslovaná od `{{1}}` postupně, každé právě jednou.
 - `answers` obsahuje jednu správnou hodnotu pro každé políčko ve stejném pořadí.
-  Nejde o alternativní odpovědi jako u typu `text`: musí souhlasit všechna políčka.
-- `numeric: true` zobrazí číselnou klávesnici; chemické koeficienty vyplňuj včetně 1.
-- Pro běžný text použij `numeric: false`; volitelně lze nastavit `ignoreCase: true`.
-- `template` je prostý text, ne HTML nebo Markdown. Chemické indexy zapisuj jako Unicode
-  dolní indexy (`H₂O`), které se při vyplňování nemění.
+  Nejde o alternativní odpovědi jako u typu `text`: musí souhlasit všechna
+  políčka.
+- `numeric: true` zobrazí číselnou klávesnici; chemické koeficienty vyplňuj
+  včetně 1.
+- Pro běžný text použij `numeric: false`; volitelně lze nastavit
+  `ignoreCase: true`.
+- `template` je prostý text, ne HTML nebo Markdown. Chemické indexy zapisuj jako
+  Unicode dolní indexy (`H₂O`), které se při vyplňování nemění.
 - Výsledky se ukládají po jednotlivých otázkách stejně jako u ostatních kvízů.
   Správná odpověď znamená správně vyplněnou celou rovnici.
 
-Nový typ vyžaduje aktualizovanou webovou nebo Android aplikaci; starší typy otázek
-zůstávají beze změny. Lokální Android preview standardně načítá DB z originu,
-takže nové lokální otázky se v něm bez aktualizace zdroje databáze samy neobjeví.
+Nový typ vyžaduje aktualizovanou webovou nebo Android aplikaci; starší typy
+otázek zůstávají beze změny. Lokální Android preview standardně načítá DB z
+originu, takže nové lokální otázky se v něm bez aktualizace zdroje databáze samy
+neobjeví.
 
 ## Lokální ukládání výsledků
 
-Web i Android ukládají poslední průběh každého kvízu včetně výsledku, nikoli historii
-všech pokusů. Ukládají pouze hashe, pořadí otázek a stavy odpovědí; text otázek,
-napsané odpovědi ani hesla do tohoto úložiště nepatří. Změna obsahu kvízu zneplatní
-jeho starý výsledek.
+Web i Android ukládají poslední průběh každého kvízu včetně výsledku, nikoli
+historii všech pokusů. Ukládají pouze hashe, pořadí otázek a stavy odpovědí;
+text otázek, napsané odpovědi ani hesla do tohoto úložiště nepatří. Změna obsahu
+kvízu zneplatní jeho starý výsledek.
 
 Záznamy se odstraňují po 90 dnech bez procvičování daného kvízu a při překročení
-200 kvízů se mažou nejstarší. Úklid probíhá při inicializaci úložiště a při ukládání;
-prošlý záznam se odstraní i při čtení. Dosavadní záznamy bez časového údaje dostanou
-při přechodu na tento formát novou 90denní lhůtu. Na webu se při nedostupném
-localStorage používá pouze paměť pro aktuální otevření stránky.
+200 kvízů se mažou nejstarší. Úklid probíhá při inicializaci úložiště a při
+ukládání; prošlý záznam se odstraní i při čtení. Dosavadní záznamy bez časového
+údaje dostanou při přechodu na tento formát novou 90denní lhůtu. Na webu se při
+nedostupném localStorage používá pouze paměť pro aktuální otevření stránky.

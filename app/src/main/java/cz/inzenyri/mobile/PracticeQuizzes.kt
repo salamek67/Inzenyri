@@ -4,9 +4,13 @@ import org.json.JSONObject
 
 /** Legacy quiz remains readable alongside additional, named practice sets. */
 internal object PracticeQuizzes {
-    fun questions(quiz: JSONObject): List<JSONObject> = quiz.optJSONArray("questions")?.let { values ->
-        (0 until values.length()).mapNotNull { values.optJSONObject(it) }
-    }.orEmpty()
+    fun questions(quiz: JSONObject): List<JSONObject> =
+        quiz
+            .optJSONArray("questions")
+            ?.let { values ->
+                (0 until values.length()).mapNotNull { values.optJSONObject(it) }
+            }
+            .orEmpty()
 
     fun forTest(item: JSONObject): List<JSONObject> = buildList {
         fun include(quiz: JSONObject?) {
@@ -19,6 +23,8 @@ internal object PracticeQuizzes {
         }
     }
 
-    fun title(quiz: JSONObject, index: Int): String = quiz.optString("title").trim()
-        .ifBlank { if (index == 0) "Základní procvičování" else "Kvíz ${index + 1}" }
+    fun title(quiz: JSONObject, index: Int): String =
+        quiz.optString("title").trim().ifBlank {
+            if (index == 0) "Základní procvičování" else "Kvíz ${index + 1}"
+        }
 }
