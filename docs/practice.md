@@ -1,4 +1,32 @@
-# Doplňovací otázky v procvičování
+# Typy procvičování
+
+## Kartičky
+
+Typ `flashcard` funguje na webu i v Androidu. Nejprve se zobrazí přední strana,
+po stisku **Otočit kartičku** zadní strana a vlastní hodnocení **Umím** nebo
+**Ještě procvičit**. Hodnocení vychází z rozhodnutí uživatele, nikoli automatické
+kontroly odpovědi. Lze také přeskočit a na konci zopakovat neosvojené i přeskočené
+kartičky. Průběh se ukládá stejně jako u ostatních otázek; samotné otočení
+kartičky se nepočítá jako odpověď.
+
+```json
+{
+  "type": "flashcard",
+  "prompt": "Jak se španělsky řekne dobrý den?",
+  "answer": "Buenos días",
+  "explanation": "Používá se ráno a dopoledne."
+}
+```
+
+Obě strany jsou povinné a podporují stejné formátování jako ostatní otázky.
+`explanation` je volitelné a zobrazí se po hodnocení. Kartičky lze kombinovat
+s ostatními typy otázek v jednom kvízu a promíchat jejich pořadí.
+V Python správci při sestavování kvízu zvol `[k]artičky`.
+Android editor nadále vytváří jen jednoduchou textovou otázku; sady kartiček
+se připravují ve správci databáze. Web je určený k procvičování, nemá editor sad.
+Starší klienti vyžadují aktualizaci pro správné zobrazení kartiček.
+
+## Doplňovací otázky
 
 Typ `fill` je společný pro web i Android. V Python správci jej vytvoříš
 volbou `[d]oplňování` při sestavování kvízu.

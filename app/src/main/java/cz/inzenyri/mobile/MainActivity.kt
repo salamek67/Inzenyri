@@ -1811,9 +1811,11 @@ class MainActivity : ComponentActivity() {
                     setPadding(dp(14), dp(14), dp(14), dp(14))
                     background = rounded(if (darkMode) Color.rgb(40, 39, 56) else Color.rgb(246, 245, 250), 16)
                 }
-                feedback.addView(label(if (correct) "✓ Správně" else "Zkusíme to příště", 18,
+                feedback.addView(label(if (kind == "flashcard") {
+                    if (correct) "✓ Umím" else "Ještě procvičit"
+                } else if (correct) "✓ Správně" else "Zkusíme to příště", 18,
                     if (correct) (if (darkMode) Color.rgb(126, 220, 169) else Color.rgb(31, 126, 80)) else ink, true))
-                if (!correct) feedback.addView(label("", 16, ink, false).apply {
+                if (!correct && kind != "flashcard") feedback.addView(label("", 16, ink, false).apply {
                     richText.setText(this, "Správná odpověď: $correctAnswer")
                 }, margin(0, 8, 0, 0))
                 question.optString("explanation").takeIf { it.isNotBlank() }?.let { explanation ->
@@ -1826,7 +1828,33 @@ class MainActivity : ComponentActivity() {
                 }, LinearLayout.LayoutParams(-1, -2))
                 bodyScroll.post { bodyScroll.fullScroll(View.FOCUS_DOWN) }
             }
-            if (kind == "choice") {
+            if (kind == "flashcard") {
+                val answer = question.opt("answer") as? String
+                if (question.opt("prompt") !is String || question.optString("prompt").isBlank() || answer.isNullOrBlank()) {
+                    body.addView(label("Neplatná kartička. Můžeš ji přeskočit.", 15, muted, false))
+                } else {
+                    body.addView(label("Vybav si odpověď a potom kartičku otoč.", 15, muted, false), margin(0, 0, 0, 14))
+                    val back = label("", 21, ink, false).apply {
+                        richText.setText(this, answer)
+                        visibility = View.GONE
+                        setPadding(dp(16), dp(18), dp(16), dp(18))
+                        background = rounded(if (darkMode) Color.rgb(45, 44, 63) else Color.rgb(244, 243, 249), 16)
+                    }
+                    body.addView(back, margin(0, 0, 0, 14))
+                    val ratings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+                    ratings.addView(button("Umím") { showFeedback(true) })
+                    ratings.addView(button("Ještě procvičit") { showFeedback(false) }, margin(0, 8, 0, 0))
+                    val reveal = button("Otočit kartičku") { }
+                    reveal.setOnClickListener {
+                        reveal.visibility = View.GONE
+                        back.visibility = View.VISIBLE
+                        ratings.visibility = View.VISIBLE
+                        back.announceForAccessibility(back.text)
+                    }
+                    body.addView(reveal)
+                    body.addView(ratings)
+                }
+            } else if (kind == "choice") {
                 val options = question.optJSONArray("options") ?: JSONArray()
                 for (selected in 0 until options.length()) {
                     body.addView(button("") {
@@ -1890,7 +1918,7 @@ class MainActivity : ComponentActivity() {
             }.apply {
                 setTextColor(ink)
                 background = rounded(if (darkMode) Color.rgb(43, 42, 61) else Color.WHITE, 14)
-            }, LinearLayout.LayoutParams(if (kind == "choice") -1 else 0, -2, if (kind == "choice") 0f else 1f))
+            }, LinearLayout.LayoutParams(if (kind in setOf("choice", "flashcard")) -1 else 0, -2, if (kind in setOf("choice", "flashcard")) 0f else 1f))
             page.addView(footer, margin(0, 14, 0, 0))
             setContentView(page)
         }

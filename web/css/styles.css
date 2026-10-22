@@ -698,6 +698,18 @@
         color: var(--text);
         background: var(--solid);
       }
+      .quiz-flashcard {
+        margin-top: 18px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--solid);
+        color: var(--text);
+        font-size: 1.3rem;
+        overflow-wrap: anywhere;
+      }
+      .quiz-flashcard > :first-child { margin-top: 0; }
+      .quiz-flashcard > :last-child { margin-bottom: 0; }
       .quiz-actions {
         display: flex;
         justify-content: flex-end;

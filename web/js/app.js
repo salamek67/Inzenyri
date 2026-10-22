@@ -905,6 +905,53 @@ function renderQuizQuestion() {
     PracticeProgress.write(state.identity, state.attempt);
   }
   const skip = quizAction("Přeskočit", () => { if (state.answered) return; saveOutcome(2); next(); });
+  if (question.type === "flashcard") {
+    root.append(progress, heading);
+    if (typeof question.prompt !== "string" || !question.prompt.trim() ||
+        typeof question.answer !== "string" || !question.answer.trim()) {
+      root.append(document.createTextNode("Neplatná kartička."), skip);
+      return;
+    }
+    const hint = document.createElement("p"), back = document.createElement("div"), ratings = document.createElement("div");
+    hint.textContent = "Vybav si odpověď a potom kartičku otoč.";
+    back.className = "quiz-flashcard";
+    back.hidden = true;
+    back.tabIndex = -1;
+    back.setAttribute("role", "region");
+    back.setAttribute("aria-label", "Zadní strana kartičky");
+    renderFormattedText(back, question.answer);
+    ratings.className = "quiz-actions";
+    ratings.hidden = true;
+    function rate(known) {
+      if (state.answered) return;
+      state.answered = true;
+      if (known) state.score++;
+      saveOutcome(known ? 1 : 0);
+      ratings.querySelectorAll("button").forEach(button => button.disabled = true);
+      skip.disabled = true;
+      const feedback = document.createElement("div");
+      feedback.className = `quiz-feedback ${known ? "correct" : "wrong"}`;
+      const result = document.createElement("p");
+      result.textContent = known ? "✓ Umím" : "Ještě procvičit";
+      feedback.append(result);
+      if (question.explanation) {
+        const explanation = document.createElement("p");
+        renderFormattedText(explanation, question.explanation);
+        feedback.append(explanation);
+      }
+      root.append(feedback, quizAction(state.current + 1 === state.questions.length ? "Zobrazit výsledek" : "Další kartička", next));
+      root.lastElementChild.focus({ preventScroll: true });
+    }
+    ratings.append(quizAction("Umím", () => rate(true)), quizAction("Ještě procvičit", () => rate(false)));
+    const reveal = quizAction("Otočit kartičku", () => {
+      reveal.hidden = true;
+      back.hidden = false;
+      ratings.hidden = false;
+      back.focus({ preventScroll: true });
+    });
+    root.append(hint, reveal, back, ratings, skip);
+    return;
+  }
   const fill = question.type === "fill" ? FillInQuiz.create(question) : null;
   const valid = (question.type === "fill" ? Boolean(fill) : ["choice", "text", "punctuation"].includes(question.type)) &&
     (question.type !== "choice" || (Array.isArray(question.options) && question.options.length >= 2 &&

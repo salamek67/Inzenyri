@@ -223,6 +223,11 @@ def normalize(value):
                     question["type"] = "choice"
                 if isinstance(question, dict) and question.get("type") == "fill" and not valid_fill_question(question):
                     raise DataError("Neplatná doplňovací otázka: použij {{1}}, {{2}}, … a odpovědi ve stejném pořadí.")
+                if isinstance(question, dict) and question.get("type") == "flashcard" and not all(
+                    isinstance(question.get(field), str) and question[field].strip()
+                    for field in ("prompt", "answer")
+                ):
+                    raise DataError("Kartička musí mít vyplněnou přední i zadní stranu.")
     return {"tasks": value["tasks"]}
 
 
@@ -573,7 +578,7 @@ def ask_number(prompt, minimum=1, maximum=None, default=None):
 def build_practice_question(number, count):
     heading(
         f"Otázka {number} z {count}",
-        "Výběr, textová odpověď, doplňování nebo čárky ve větě",
+        "Výběr, textová odpověď, doplňování, čárky nebo kartičky",
     )
     kind = {
         "v": "choice",
@@ -582,6 +587,10 @@ def build_practice_question(number, count):
         "choice": "choice",
         "t": "text",
         "text": "text",
+        "k": "flashcard",
+        "karticky": "flashcard",
+        "kartičky": "flashcard",
+        "flashcard": "flashcard",
         "d": "fill",
         "doplnovani": "fill",
         "doplňování": "fill",
@@ -592,7 +601,7 @@ def build_practice_question(number, count):
         "čárky": "punctuation",
         "interpunkce": "punctuation",
         "punctuation": "punctuation",
-    }.get(ask("Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky").lower())
+    }.get(ask("Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky / [k]artičky").lower())
     if not kind:
         raise DataError("Neplatný typ otázky.")
     if kind == "choice":
@@ -610,6 +619,12 @@ def build_practice_question(number, count):
             "options": options,
             "answer": answer,
         }
+    elif kind == "flashcard":
+        prompt = ask_multiline("Přední strana kartičky")
+        answer = ask_multiline("Zadní strana kartičky")
+        if not prompt.strip() or not answer.strip():
+            raise DataError("Vyplň obě strany kartičky.")
+        question = {"type": "flashcard", "prompt": prompt, "answer": answer}
     elif kind == "fill":
         prompt = ask_multiline("Zadání otázky")
         template = ask_multiline("Text s políčky {{1}}, {{2}}, … (např. {{1}} H₂ + {{2}} O₂ → {{3}} H₂O)")
@@ -681,7 +696,7 @@ def build_practice_question(number, count):
 def build_practice():
     heading(
         "Editor procvičování",
-        "Výběr možností, textová odpověď nebo doplňování čárek.",
+        "Výběr možností, text, doplňování, čárky nebo kartičky.",
     )
     while True:
         try:
@@ -939,6 +954,8 @@ def info(index=None):
             for option_index, option in enumerate(options):
                 marker = "✓" if option_index == answer else "·"
                 print(f"      {marker} {option}")
+        elif kind == "flashcard":
+            print(f"      {muted('Zadní strana:')} {question.get('answer', '')}")
         else:
             answers = question.get("answers", [])
             if kind == "punctuation":
