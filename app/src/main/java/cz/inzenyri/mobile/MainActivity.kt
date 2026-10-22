@@ -6,6 +6,7 @@ import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
@@ -70,6 +71,8 @@ class MainActivity : ComponentActivity() {
     private var sourceEnvelope: JSONObject? = null
     private var selectedType = "task"
     private var dateValue = today()
+    private var timeValue = ""
+    private var timeButton: Button? = null
     private var statusView: TextView? = null
     private var footerView: TextView? = null
     private var reminderButton: Button? = null
@@ -289,6 +292,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun render() {
+        // Resizing for the IME can expose the window behind the content during its animation.
+        window.setBackgroundDrawable(ColorDrawable(
+            if (darkMode) Color.rgb(17, 20, 31) else Color.rgb(248, 247, 251)
+        ))
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(24), dp(20), dp(22))
@@ -384,6 +391,7 @@ class MainActivity : ComponentActivity() {
             addView(types)
             titleInput = input("Název", false).also { addView(it, margin(0, 14, 0, 0)) }
             dateButton = button("Datum · $dateValue") { chooseDate() }.also { addView(it, margin(0, 10, 0, 0)) }
+            timeButton = button(timeValue.ifBlank { "Celý den" }) { chooseItemTime() }.also { addView(it, margin(0, 10, 0, 0)) }
             descriptionInput = input("Popis (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             solutionInput = input("Řešení v Markdownu (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
             solutionTemplateButton = button("＋ Šablona pracovního sešitu") { showWorksheetTemplate() }
@@ -1160,7 +1168,7 @@ class MainActivity : ComponentActivity() {
             val item = tasks.optJSONObject(index) ?: return@mapNotNull null
             val date = parseDatabaseDate(item.optString("date"))
             Triple(item, index, date)
-        }.sortedWith(compareBy<Triple<JSONObject, Int, Date?>>({ it.third ?: Date(Long.MAX_VALUE) }, { it.second }))
+        }.sortedWith(compareBy<Triple<JSONObject, Int, Date?>>({ it.third ?: Date(Long.MAX_VALUE) }, { DatabaseRecords.time(it.first) }, { it.second }))
         val activeEntries = allEntries.filter { entry ->
             val date = entry.third
             date == null || !date.before(today)
@@ -1342,7 +1350,7 @@ class MainActivity : ComponentActivity() {
             val item = tasks.optJSONObject(index) ?: return@mapNotNull null
             val date = parseDatabaseDate(item.optString("date"))
             Triple(item, index, date)
-        }.sortedWith(compareBy<Triple<JSONObject, Int, Date?>>({ it.third ?: Date(Long.MAX_VALUE) }, { it.second }))
+        }.sortedWith(compareBy<Triple<JSONObject, Int, Date?>>({ it.third ?: Date(Long.MAX_VALUE) }, { DatabaseRecords.time(it.first) }, { it.second }))
         for ((type, title) in listOf("test" to "Testy", "task" to "Úkoly", "event" to "Akce")) {
             addSection(container, title, entries.filter { itemType(it.first) == type })
         }
@@ -1442,7 +1450,7 @@ class MainActivity : ComponentActivity() {
             else -> purple
         }
         titleBlock.addView(label(item.optString("name").ifBlank { "Bez názvu" }, 17, if (completed) muted else ink, true))
-        titleBlock.addView(label(item.optString("date").ifBlank { "Bez data" }, 13, accent, true), margin(0, 3, 0, 0))
+        titleBlock.addView(label(item.optString("date").ifBlank { "Bez data" } + " · " + DatabaseRecords.time(item).ifBlank { "Celý den" }, 13, accent, true), margin(0, 3, 0, 0))
         heading.addView(checkbox)
         heading.addView(titleBlock, LinearLayout.LayoutParams(0, -2, 1f))
         card.addView(heading)
@@ -1992,6 +2000,8 @@ class MainActivity : ComponentActivity() {
         clearQuizCheckBox?.isChecked = false
         clearQuizCheckBox?.visibility = View.GONE
         dateValue = today()
+        timeValue = ""
+        timeButton?.text = "Celý den"
         dateButton?.text = "Datum · $dateValue"
         addButton?.text = "Přidat položku"
         selectType("task")
@@ -2007,6 +2017,8 @@ class MainActivity : ComponentActivity() {
         selectType(itemType(item))
         titleInput?.setText(item.optString("name"))
         dateValue = item.optString("date").ifBlank { today() }
+        timeValue = DatabaseRecords.time(item)
+        timeButton?.text = timeValue.ifBlank { "Celý den" }
         dateButton?.text = "Datum · $dateValue"
         descriptionInput?.setText(item.optString("task"))
         solutionInput?.setText(item.optString("solution"))
@@ -2094,6 +2106,7 @@ class MainActivity : ComponentActivity() {
             .put("task", descriptionInput?.text?.toString()?.trim().orEmpty())
             .put("solution", if (selectedType == "task") solutionInput?.text?.toString()?.trim().orEmpty() else "")
         if (selectedType == "task") item.put("aiReviews", JSONArray(selectedAiReviews.toList()))
+        if (timeValue.isNotBlank()) item.put("time", timeValue)
         if (selectedType == "test") {
             val prompt = quizPromptInput?.text?.toString()?.trim().orEmpty()
             val answers = quizAnswersInput?.text?.toString().orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
@@ -2138,6 +2151,7 @@ class MainActivity : ComponentActivity() {
             .put("name", name)
             .put("date", SimpleDateFormat("dd.MM.yyyy", Locale.ROOT).format(parsedDate))
             .put("task", descriptionInput?.text?.toString()?.trim().orEmpty())
+        if (timeValue.isBlank()) updated.remove("time") else updated.put("time", timeValue)
         if (selectedType == "task") {
             updated.put("solution", solutionInput?.text?.toString()?.trim().orEmpty())
             updated.put("aiReviews", JSONArray(selectedAiReviews.toList()))
@@ -3065,6 +3079,51 @@ class MainActivity : ComponentActivity() {
         aiReviewEditor?.visibility = if (type == "task") View.VISIBLE else View.GONE
         quizPromptInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
         quizAnswersInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
+    }
+
+    private fun chooseItemTime() {
+        val dialog = Dialog(this)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(18), dp(22), dp(22))
+            background = rounded(if (darkMode) Color.rgb(30, 29, 45) else Color.rgb(250, 249, 255), 24)
+        }
+        content.addView(label("Čas položky", 22, ink, true))
+        val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val parts = timeValue.split(':')
+        val hour = input("Hodina", false).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(parts.getOrNull(0).orEmpty())
+        }
+        val minute = input("Minuta", false).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(parts.getOrNull(1).orEmpty())
+        }
+        row.addView(hour, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(label(" : ", 20, ink, true))
+        row.addView(minute, LinearLayout.LayoutParams(0, -2, 1f))
+        content.addView(row, margin(0, 14, 0, 14))
+        content.addView(button("Uložit čas") {
+            val h = hour.text.toString().toIntOrNull()
+            val m = minute.text.toString().toIntOrNull()
+            if (h == null || h !in 0..23 || m == null || m !in 0..59) {
+                toast("Zadej hodinu 0–23 a minutu 0–59.")
+                return@button
+            }
+            timeValue = String.format(Locale.ROOT, "%02d:%02d", h, m)
+            timeButton?.text = timeValue
+            dialog.dismiss()
+        })
+        content.addView(button("Celý den") {
+            timeValue = ""
+            timeButton?.text = "Celý den"
+            dialog.dismiss()
+        }, margin(0, 8, 0, 0))
+        content.addView(button("Zrušit") { dialog.dismiss() }, margin(0, 8, 0, 0))
+        dialog.setContentView(content)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels - dp(40)).coerceAtMost(dp(440)), -2)
     }
 
     private fun chooseDate() {

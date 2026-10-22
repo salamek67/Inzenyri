@@ -42,6 +42,16 @@ V interaktivní nabídce použij `add` pro přidání úkolu, testu nebo akce,
 `edit` pro úpravu, `list` pro přehled a `help` pro všechny příkazy.
 Změny se při uložení rovnou zašifrují. `password` změní heslo databáze.
 
+Každý úkol, test i akce může mít volitelný čas v místním čase školy.
+V Androidu pod datem otevři volbu času; tlačítko **Celý den** čas odstraní.
+V Python správci při přidání zadej `HH:mm`, nebo stiskni Enter pro celý den.
+Při úpravě Enter ponechá původní čas a `-` jej odstraní.
+Web čas zobrazuje; položky se vytvářejí a upravují v Androidu nebo správci.
+Ve stejný den se nejprve zobrazují celodenní položky, potom položky podle času.
+Sdílený JSON používá volitelné pole `"time": "08:30"`; chybějící nebo prázdné
+pole znamená celý den, takže starší záznamy není nutné měnit.
+Čas položky nemění nastavený čas Android připomínek.
+
 `private/` obsahuje lokální nešifrovaná data a uložené heslo, je ignorované Gitem.
 Přístupové heslo ani přihlašovací QR nezveřejňuj; umožňují odemknout databázi.
 

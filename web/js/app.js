@@ -244,6 +244,10 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 document.addEventListener("focusin", event => { if (aiReviewAnchor && !aiReviewAnchor.contains(event.target)) closeAiReviewBubble(); });
 document.addEventListener("visibilitychange", () => { if (document.hidden) closeAiReviewBubble(); });
 
+function itemTime(item) {
+  return typeof item.time === "string" && /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(item.time) ? item.time : "";
+}
+
 function createItem(item, index) {
   const key = itemKey(item, index),
     article = document.createElement("article");
@@ -270,9 +274,12 @@ function createItem(item, index) {
   title.className = "item-name";
   title.textContent = item.name || "Bez názvu";
   date.className = "date";
-  date.textContent = item.date || "Bez data";
+  date.textContent = `${item.date || "Bez data"} · ${itemTime(item) || "Celý den"}`;
   const parsedDate = parseDate(item.date);
-  if (parsedDate) date.dateTime = parsedDate.toISOString().slice(0, 10);
+  if (parsedDate) {
+    const day = `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, "0")}-${String(parsedDate.getDate()).padStart(2, "0")}`;
+    date.dateTime = day + (itemTime(item) ? `T${itemTime(item)}` : "");
+  }
   main.append(title, date);
   top.append(checkbox, main);
   article.append(top);
@@ -358,7 +365,8 @@ function render() {
     .filter(({ date }) => !date || date >= today)
     .sort(
       (a, b) =>
-        (a.date ?? Infinity) - (b.date ?? Infinity) || a.index - b.index,
+        (a.date ?? Infinity) - (b.date ?? Infinity) ||
+        itemTime(a.item).localeCompare(itemTime(b.item)) || a.index - b.index,
     );
   renderCalendar(active);
   for (const [type, [listId, countId]] of Object.entries(CATEGORIES)) {

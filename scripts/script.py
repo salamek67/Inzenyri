@@ -528,7 +528,7 @@ def open_data():
 
 def save(data, password, db_version=None):
     data = normalize(data)
-    data["tasks"].sort(key=lambda x: parse_date(x.get("date", "")) or date.max)
+    data["tasks"].sort(key=lambda x: (parse_date(x.get("date", "")) or date.max, item_time(x)))
     encrypted = envelope(data, password, db_version)
     atomic_write(PRIVATE, data)
     atomic_write(ENC, encrypted)
@@ -749,6 +749,17 @@ def choose_ai_reviews(current=None):
         cli_error("Vyber čísla 1–4, Enter nebo -.")
 
 
+def item_time(item):
+    value = item.get("time", "")
+    return value if isinstance(value, str) and re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value) else ""
+
+
+def validate_time(value):
+    if value and not item_time({"time": value}):
+        raise DataError("Neplatný čas. Použij HH:mm (00:00–23:59), nebo ponech celý den.")
+    return value
+
+
 def add(type_argument=None):
     heading("Nová položka", "Úkol, test nebo školní akce")
     data, password = open_data()
@@ -757,6 +768,7 @@ def add(type_argument=None):
         raise DataError("Neplatný typ.")
     name = ask("Název")
     when = ask("Datum (dd.mm.yyyy)")
+    time_value = validate_time(ask("Čas (HH:mm, Enter = celý den)").strip())
     text = ask_multiline("Popis")
     if not parse_date(when):
         raise DataError("Neplatné datum.")
@@ -772,6 +784,8 @@ def add(type_argument=None):
         "task": text,
         "solution": solution,
     }
+    if time_value:
+        item["time"] = time_value
     if kind == "task":
         item["aiReviews"] = choose_ai_reviews()
     if kind == "test":
@@ -795,12 +809,12 @@ def display(items):
         warning("Žádné aktuální položky.")
         return
     print(
-        f"\n  {muted('#'):>3}  {muted('TYP'):<10} {muted('DATUM'):<12} {muted('NÁZEV')}"
+        f"\n  {muted('#'):>3}  {muted('TYP'):<10} {muted('DATUM'):<12} {muted('ČAS'):<9} {muted('NÁZEV')}"
     )
     print("  " + muted("─" * 62))
     for i, x in enumerate(items):
         print(
-            f"  {accent(str(i)):>3}  {TYPES.get(x.get('type','task'),'Úkol'):<10} {x.get('date',''):<12} {bold(x.get('name',''))}"
+            f"  {accent(str(i)):>3}  {TYPES.get(x.get('type','task'),'Úkol'):<10} {x.get('date',''):<12} {item_time(x) or 'Celý den':<9} {bold(x.get('name',''))}"
         )
 
 
@@ -894,7 +908,7 @@ def info(index=None):
 
     item = items[parse_item_index(index, len(items), "Index k zobrazení")]
     heading(item.get("name") or "Bez názvu", TYPES.get(item.get("type"), "Položka"))
-    print(f"  {muted('Datum:')} {item.get('date') or 'neuvedeno'}")
+    print(f"  {muted('Datum:')} {item.get('date') or 'neuvedeno'} · {item_time(item) or 'Celý den'}")
     print(f"  {muted('Popis:')} {item.get('task') or '—'}")
     if item.get("type") == "task" and isinstance(item.get("aiReviews"), list):
         names = [name for key, name in AI_REVIEW_NAMES.items() if key in item["aiReviews"]]
@@ -956,6 +970,11 @@ def edit(index=None):
     if not parse_date(new_date):
         raise DataError("Neplatné datum.")
     updated["date"] = new_date
+    time_value = validate_time(edit_value("Čas (HH:mm, - = celý den)", item_time(updated), clearable=True).strip())
+    if time_value:
+        updated["time"] = time_value
+    else:
+        updated.pop("time", None)
     updated["task"] = edit_value(
         "Popis", str(updated.get("task", "")), multiline=True, clearable=True
     )

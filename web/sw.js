@@ -1,5 +1,5 @@
 /* Only the public app shell and a validated encrypted database are cached. */
-const SHELL_CACHE = "inzenyri-shell-13", DATA_CACHE = "inzenyri-data-1";
+const SHELL_CACHE = "inzenyri-shell-14", DATA_CACHE = "inzenyri-data-1";
 const assetPaths = [
   "./",
   "index.html",

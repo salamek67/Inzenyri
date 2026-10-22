@@ -9,6 +9,9 @@ import java.util.Locale
 
 /** Pure helpers for reading and identifying database items. */
 internal object DatabaseRecords {
+    fun time(item: JSONObject): String = item.optString("time")
+        .takeIf { Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]").matches(it) }.orEmpty()
+
     fun type(item: JSONObject): String {
         val explicit = item.optString("type")
         if (explicit in setOf("task", "test", "event")) return explicit
