@@ -1139,7 +1139,7 @@ def android_version():
     return source, match, tuple(map(int, match.groups()[1:4]))
 
 
-def offer_android_version_bump(*, release=True):
+def offer_android_version_bump(*, release=True, create_tag=False):
     source, match, version = android_version()
     current = ".".join(map(str, version))
     if ask(f"Zvýšit verzi Android aplikace {current}? [a/n]").lower() not in {"a", "ano"}:
@@ -1183,16 +1183,32 @@ def offer_android_version_bump(*, release=True):
     release_tag = new_version
     if release and github_release_exists(release_tag):
         raise DataError(f"GitHub Release {release_tag} už existuje.")
+    if create_tag:
+        existing = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{release_tag}"], cwd=ROOT
+        )
+        if existing.returncode == 0:
+            raise DataError(f"Tag {release_tag} už existuje; verze Androidu nebyla změněna.")
+        if existing.returncode != 1:
+            raise DataError("Nelze ověřit existující Git tagy; verze Androidu nebyla změněna.")
+        subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
     updated = source[: match.start(2)] + new_version + source[match.end(4) :]
     atomic_write_text(ANDROID_GRADLE, updated)
+    if create_tag:
+        try:
+            subprocess.run(["git", "tag", release_tag, "HEAD"], cwd=ROOT, check=True)
+        except (OSError, subprocess.CalledProcessError):
+            atomic_write_text(ANDROID_GRADLE, source)
+            raise
+        success(f"Lokální tag {release_tag} vytvořen na aktuálním commitu (HEAD).")
     success(f"Verze Android aplikace zvýšena: {current} → {new_version}.")
     return current, new_version
 
 
 def bump():
-    heading("Zvýšit verzi", "Pouze lokální změna verze webu nebo Androidu.")
+    heading("Zvýšit verzi", "Lokální změna verze; pro Android také tag na aktuálním commitu.")
     offer_web_version_bump()
-    offer_android_version_bump(release=False)
+    offer_android_version_bump(release=False, create_tag=True)
 
 
 def consume_changelog_category(section):
@@ -1433,7 +1449,7 @@ def help_text():
     command("github-login", "Přihlásit GitHub", "uložit přihlášení pro tento repozitář")
     command("github-status", "GitHub účet", "ověřit přihlášení používané pro releasy")
     command("commit [text]", "Publikovat", "commit a push na GitHub")
-    command("bump", "Zvýšit verzi", "pouze lokálně, bez commitu a releasu")
+    command("bump", "Zvýšit verzi", "lokální verze a Android tag, bez commitu a releasu")
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
     print(f"\n  {muted('Příklady:')} add u · info 2 · edit 2 · delete 2-5\n")

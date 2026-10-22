@@ -117,8 +117,11 @@ Bez bumpu Android verze se nový release nevytváří a changelog se nemaže.
 
 Pro samotné lokální zvýšení verze použij `bump` v nabídce nebo
 `python3 script.py bump`. Skript nabídne web a Android zvlášť, u každého
-vybereš major/minor/patch. Neprovádí commit, push ani release, nepotřebuje
-přihlášení ke GitHubu a nemění databázi ani changelog. Při pozdějším `commit`
+vybereš major/minor/patch. U Androidu zároveň vytvoří lokální Git tag pojmenovaný
+samotnou novou verzí, například `2.0.3`, na aktuálním commitu (`HEAD`). Změna
+verze zůstává necommitnutá, takže ji tento tag ještě neobsahuje. Existující tag
+nepřepisuje. Neprovádí commit, push ani release, nepotřebuje přihlášení ke GitHubu
+a nemění databázi ani changelog. Při pozdějším `commit`
 se nabídka zvýšení verze zobrazí znovu; pokud už verzi zvyšovat nechceš, odmítni ji.
 
 Skip prefix skript vyhodnocuje automaticky. Při ručním commitu lze použít:
