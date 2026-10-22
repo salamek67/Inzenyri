@@ -41,6 +41,7 @@ COMMANDS = (
     "github-login",
     "github-status",
     "commit",
+    "bump",
     "help",
     "clear",
     "quit",
@@ -1138,26 +1139,27 @@ def android_version():
     return source, match, tuple(map(int, match.groups()[1:4]))
 
 
-def offer_android_version_bump():
+def offer_android_version_bump(*, release=True):
     source, match, version = android_version()
     current = ".".join(map(str, version))
     if ask(f"Zvýšit verzi Android aplikace {current}? [a/n]").lower() not in {"a", "ano"}:
         return None
 
-    try:
-        auth = github_cli(["auth", "status"], capture_output=True, text=True)
-    except FileNotFoundError as exc:
-        raise DataError(
-            "Pro Android release nainstaluj GitHub CLI (gh) a přihlas vyhrazený účet příkazem:\n"
-            f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
-        ) from exc
-    if auth.returncode:
-        detail = (auth.stderr or auth.stdout).strip()
-        raise DataError(
-            "Přihlas účet pro releasy příkazem:\n"
-            f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
-            + (f"\n{detail}" if detail else "")
-        )
+    if release:
+        try:
+            auth = github_cli(["auth", "status"], capture_output=True, text=True)
+        except FileNotFoundError as exc:
+            raise DataError(
+                "Pro Android release nainstaluj GitHub CLI (gh) a přihlas vyhrazený účet příkazem:\n"
+                f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
+            ) from exc
+        if auth.returncode:
+            detail = (auth.stderr or auth.stdout).strip()
+            raise DataError(
+                "Přihlas účet pro releasy příkazem:\n"
+                f'GH_CONFIG_DIR={shlex.quote(str(GH_CONFIG_DIR))} gh auth login --hostname github.com'
+                + (f"\n{detail}" if detail else "")
+            )
 
     level = {
         "1": 0,
@@ -1179,12 +1181,18 @@ def offer_android_version_bump():
         bumped[index] = 0
     new_version = ".".join(map(str, bumped))
     release_tag = new_version
-    if github_release_exists(release_tag):
+    if release and github_release_exists(release_tag):
         raise DataError(f"GitHub Release {release_tag} už existuje.")
     updated = source[: match.start(2)] + new_version + source[match.end(4) :]
     atomic_write_text(ANDROID_GRADLE, updated)
     success(f"Verze Android aplikace zvýšena: {current} → {new_version}.")
     return current, new_version
+
+
+def bump():
+    heading("Zvýšit verzi", "Pouze lokální změna verze webu nebo Androidu.")
+    offer_web_version_bump()
+    offer_android_version_bump(release=False)
 
 
 def consume_changelog_category(section):
@@ -1425,6 +1433,7 @@ def help_text():
     command("github-login", "Přihlásit GitHub", "uložit přihlášení pro tento repozitář")
     command("github-status", "GitHub účet", "ověřit přihlášení používané pro releasy")
     command("commit [text]", "Publikovat", "commit a push na GitHub")
+    command("bump", "Zvýšit verzi", "pouze lokálně, bez commitu a releasu")
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
     command("quit", "Ukončit", "bezpečně zavřít konzoli")
     print(f"\n  {muted('Příklady:')} add u · info 2 · edit 2 · delete 2-5\n")
@@ -1462,6 +1471,10 @@ def dispatch(cmd, args=()):
         edit(args[0] if args else None)
     elif cmd in {"d", "delete", "del"}:
         delete(args)
+    elif cmd == "bump":
+        if args:
+            raise DataError("Příkaz bump nepřijímá argumenty; verzi vyber v nabídce.")
+        bump()
     elif cmd in {"c", "commit", "push"}:
         commit(" ".join(args) or None)
     elif cmd in {"h", "help", "?"}:

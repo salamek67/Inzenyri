@@ -115,6 +115,12 @@ originu, nabídne zvýšení verzí podle změněných souborů, vytvoří commi
 Při zvýšení Android verze také vytvoří GitHub Release s poznámkami z `CHANGELOG.md`.
 Bez bumpu Android verze se nový release nevytváří a changelog se nemaže.
 
+Pro samotné lokální zvýšení verze použij `bump` v nabídce nebo
+`python3 script.py bump`. Skript nabídne web a Android zvlášť, u každého
+vybereš major/minor/patch. Neprovádí commit, push ani release, nepotřebuje
+přihlášení ke GitHubu a nemění databázi ani changelog. Při pozdějším `commit`
+se nabídka zvýšení verze zobrazí znovu; pokud už verzi zvyšovat nechceš, odmítni ji.
+
 Skip prefix skript vyhodnocuje automaticky. Při ručním commitu lze použít:
 
 - `[app skip]` — vynechá sestavení Androidu.

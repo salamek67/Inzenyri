@@ -8,7 +8,7 @@ function writePreference(name, value) {
 }
 
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.6.3";
+const PAGE_VERSION = "2.7.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
