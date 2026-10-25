@@ -2642,6 +2642,7 @@ class MainActivity : ComponentActivity() {
                     gravity = Gravity.CENTER_VERTICAL
                 }
             var answered = false
+            var mapQuestion: MapQuestionView? = null
             fun showFeedback(correct: Boolean) {
                 if (answered) return
                 answered = true
@@ -2659,9 +2660,12 @@ class MainActivity : ComponentActivity() {
                         for (i in 0 until view.childCount) disable(view.getChildAt(i))
                 }
                 disable(body)
+                mapQuestion?.review()
                 footer.removeAllViews()
                 val correctAnswer =
-                    if (kind == "fill") {
+                    if (kind == "map") {
+                        MapQuestionView.solution(this, question)
+                    } else if (kind == "fill") {
                         FillInQuestionView.solution(question)
                     } else if (kind == "choice") {
                         question
@@ -2794,6 +2798,28 @@ class MainActivity : ComponentActivity() {
                                     )
                             },
                         margin(0, 0, 0, 10),
+                    )
+                }
+            } else if (kind == "map") {
+                if (MapQuestionView.valid(this, question)) {
+                    val fields = MapQuestionView(this, question, ink, muted, darkMode)
+                    mapQuestion = fields
+                    body.addView(fields, margin(0, 0, 0, 14))
+                    footer.addView(
+                        button("Vyhodnotit") {
+                            if (!fields.complete()) toast("Vyber oblast nebo umísti špendlík.")
+                            else showFeedback(fields.correct())
+                        },
+                        LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) },
+                    )
+                } else {
+                    body.addView(
+                        label(
+                            "Neplatné zadání mapové otázky. Můžeš ji přeskočit.",
+                            15,
+                            muted,
+                            false,
+                        ),
                     )
                 }
             } else if (kind == "fill") {

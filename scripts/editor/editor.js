@@ -11,6 +11,7 @@ const questionTypes = {
   fill: "Doplňování",
   punctuation: "Čárky ve větě",
   flashcard: "Kartička",
+  map: "Zeměpisná mapa",
 };
 const state = {
   tasks: [],
@@ -383,6 +384,8 @@ function check(parent, title, value, update) {
   parent.append(label);
 }
 function newQuestion(type = "text") {
+  if (type === "map")
+    return { type, prompt: "", map: "europe", mode: "regions", targets: [] };
   return {
     type,
     ...(type === "punctuation"
@@ -519,7 +522,107 @@ function renderQuizzes() {
         (value) =>
           (q[q.type === "punctuation" ? "sentence" : "prompt"] = value),
       );
-      if (q.type === "flashcard")
+      if (q.type === "map") {
+        const mapRoot = el("div"),
+          selection = el("p", "field-note");
+        function drawMap() {
+          const map = MapQuiz.create(q, {
+            editor: true,
+            onChange: (answer) => {
+              if (q.mode === "regions") q.targets = answer.targets;
+              else q.target = answer.target;
+              markDirty();
+              refreshSelection();
+            },
+          });
+          mapRoot.replaceChildren(
+            map ? map.element : el("p", "error", "Zvol platnou mapu a režim."),
+          );
+          refreshSelection();
+        }
+        function refreshSelection() {
+          if (q.mode === "pin")
+            selection.textContent = q.target
+              ? `Cíl: ${q.target[1].toFixed(3)}° š., ${q.target[0].toFixed(3)}° d.`
+              : "Klikni do mapy pro zadání správného místa.";
+          else
+            MapQuiz.countries()
+              .then((values) => {
+                selection.textContent = `Správné oblasti: ${
+                  values
+                    .filter((c) => q.targets?.includes(c.id))
+                    .map((c) => `${MapQuiz.name(c)} (${c.id})`)
+                    .join(", ") || "zatím žádné — vyber je na mapě"
+                }`;
+              })
+              .catch(
+                () => (selection.textContent = "Podklad se nepodařilo načíst."),
+              );
+        }
+        function selectField(title, values, current, onChange) {
+          const label = el("label", "field"),
+            select = el("select");
+          for (const [id, name] of Object.entries(values)) {
+            const option = el("option", "", name);
+            option.value = id;
+            select.append(option);
+          }
+          select.value = current;
+          select.addEventListener("change", () => {
+            onChange(select.value);
+            markDirty();
+            drawMap();
+          });
+          label.append(el("span", "", title), select);
+          card.append(label);
+        }
+        selectField(
+          "Mapový podklad",
+          Object.fromEntries(
+            Object.entries(MapQuiz.views).map(([id, value]) => [
+              id,
+              value.name,
+            ]),
+          ),
+          q.map,
+          (value) => {
+            q.map = value;
+            q.targets = [];
+            q.target = null;
+          },
+        );
+        selectField(
+          "Režim",
+          { regions: "Vyznačení oblastí", pin: "Špendlík do mapy" },
+          q.mode,
+          (value) => {
+            q.mode = value;
+            delete q.targets;
+            delete q.target;
+            if (value === "regions") q.targets = [];
+            else {
+              q.target = null;
+              q.toleranceKm = 100;
+            }
+            renderQuizzes();
+          },
+        );
+        if (q.mode === "pin") {
+          const tolerance = field(
+            card,
+            "Tolerance vzdálenosti v km (1–2000)",
+            q.toleranceKm,
+            (value) => (q.toleranceKm = Number(value)),
+            { single: true },
+          );
+          tolerance.type = "number";
+          tolerance.min = "1";
+          tolerance.max = "2000";
+          tolerance.step = "any";
+        }
+        card.append(mapRoot, selection);
+        drawMap();
+      } else if (q.type === "flashcard")
         field(card, "Zadní strana", q.answer, (value) => (q.answer = value));
       else if (q.type === "choice") {
         const answerLabel = el("label", "field"),
@@ -678,7 +781,10 @@ function renderPreview() {
         template.textContent = q.template;
         card.append(template);
       }
-      if (q.options) {
+      if (q.type === "map") {
+        const map = MapQuiz.create(q, { editor: true, readOnly: true });
+        if (map) card.append(map.element);
+      } else if (q.options) {
         const list = el("ol");
         q.options.forEach((option, i) =>
           list.append(el("li", "", `${i === q.answer ? "✓ " : ""}${option}`)),

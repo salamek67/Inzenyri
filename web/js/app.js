@@ -1138,10 +1138,13 @@ function renderQuizQuestion() {
     return;
   }
   const fill = question.type === "fill" ? FillInQuiz.create(question) : null;
+  const map = question.type === "map" ? MapQuiz.create(question) : null;
   const valid =
-    (question.type === "fill"
-      ? Boolean(fill)
-      : ["choice", "text", "punctuation"].includes(question.type)) &&
+    (question.type === "map"
+      ? Boolean(map)
+      : question.type === "fill"
+        ? Boolean(fill)
+        : ["choice", "text", "punctuation"].includes(question.type)) &&
     (question.type !== "choice" ||
       (Array.isArray(question.options) &&
         question.options.length >= 2 &&
@@ -1176,6 +1179,8 @@ function renderQuizQuestion() {
     });
   } else if (fill) {
     answers.append(fill.element);
+  } else if (map) {
+    answers.append(map.element);
   } else {
     const input = document.createElement("textarea");
     input.className = "quiz-text";
@@ -1198,7 +1203,12 @@ function renderQuizQuestion() {
   root.append(progress, heading, form);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (state.answered || (fill && !fill.complete())) return;
+    if (
+      state.answered ||
+      (fill && !fill.complete()) ||
+      (map && !map.complete())
+    )
+      return;
     state.answered = true;
     const data = new FormData(form),
       written = question.type !== "choice",
@@ -1210,20 +1220,23 @@ function renderQuizQuestion() {
         question.type === "punctuation"
           ? normalizePunctuationAnswer
           : normalizeWrittenAnswer,
-      accepted = fill
-        ? fill.correct()
-        : written
-          ? expected.some(
-              (answer) =>
-                normalize(value, question.ignoreCase === true) ===
-                normalize(answer, question.ignoreCase === true),
-            )
-          : value === question.answer;
+      accepted = map
+        ? map.correct()
+        : fill
+          ? fill.correct()
+          : written
+            ? expected.some(
+                (answer) =>
+                  normalize(value, question.ignoreCase === true) ===
+                  normalize(answer, question.ignoreCase === true),
+              )
+            : value === question.answer;
     if (accepted) state.score++;
     saveOutcome(accepted ? 1 : 0);
     form
       .querySelectorAll("input,textarea,button")
       .forEach((input) => (input.disabled = true));
+    map?.review();
     const feedback = document.createElement("div");
     feedback.className = `quiz-feedback ${accepted ? "correct" : "wrong"}`;
     const result = document.createElement("p");
@@ -1233,7 +1246,7 @@ function renderQuizQuestion() {
       const correct = document.createElement("p");
       renderFormattedText(
         correct,
-        `Správná odpověď: ${fill ? fill.solution : written ? expected.join(" / ") : question.options[question.answer]}`,
+        `Správná odpověď: ${map ? map.solution() : fill ? fill.solution : written ? expected.join(" / ") : question.options[question.answer]}`,
       );
       feedback.append(correct);
     }

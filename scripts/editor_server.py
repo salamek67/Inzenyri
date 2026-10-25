@@ -133,6 +133,8 @@ class Database:
                         )
                 elif kind == "punctuation":
                     valid = text("sentence") and answers()
+                elif kind == "map":
+                    valid = self.manager["valid_map_question"](q)
                 else:
                     valid = False
                 if not valid:
@@ -288,6 +290,18 @@ class EditorHandler(BaseHTTPRequestHandler):
                 "/": (ASSETS / "index.html", "text/html; charset=utf-8"),
                 "/editor.css": (ASSETS / "editor.css", "text/css; charset=utf-8"),
                 "/editor.js": (ASSETS / "editor.js", "text/javascript; charset=utf-8"),
+                "/js/quiz-map.js": (
+                    ROOT / "web/js/quiz-map.js",
+                    "text/javascript; charset=utf-8",
+                ),
+                "/css/quiz-map.css": (
+                    ROOT / "web/css/quiz-map.css",
+                    "text/css; charset=utf-8",
+                ),
+                "/maps/world.json": (
+                    ROOT / "web/maps/world.json",
+                    "application/json; charset=utf-8",
+                ),
                 "/marked.js": (
                     ROOT / "web/vendor/marked-18.1.1.js",
                     "text/javascript; charset=utf-8",

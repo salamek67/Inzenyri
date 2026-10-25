@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+    sourceSets.getByName("main").assets.srcDir("../web/maps")
     namespace = "cz.inzenyri.mobile"
     compileSdk = 35
 

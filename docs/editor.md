@@ -37,13 +37,14 @@ disk. Chybějící databázi nejdřív nastav podle [základního návodu](tutor
 K testu přidej libovolný počet pojmenovaných sad. V každé zapni nebo vypni
 promíchání otázek a zvol typ jednotlivých otázek:
 
-| Typ             | Co vyplnit                                                      |
-| --------------- | --------------------------------------------------------------- |
-| Textová odpověď | Zadání a správné alternativy, každou na nový řádek              |
-| Výběr možností  | Zadání, možnosti po řádcích a správnou možnost                  |
-| Doplňování      | Zadání, text s `{{1}}`, `{{2}}`, … a hodnoty políček po řádcích |
-| Čárky ve větě   | Větu bez čárek a správnou větu s čárkami                        |
-| Kartička        | Přední a zadní stranu                                           |
+| Typ             | Co vyplnit                                                        |
+| --------------- | ----------------------------------------------------------------- |
+| Textová odpověď | Zadání a správné alternativy, každou na nový řádek                |
+| Výběr možností  | Zadání, možnosti po řádcích a správnou možnost                    |
+| Doplňování      | Zadání, text s `{{1}}`, `{{2}}`, … a hodnoty políček po řádcích   |
+| Čárky ve větě   | Větu bez čárek a správnou větu s čárkami                          |
+| Kartička        | Přední a zadní stranu                                             |
+| Zeměpisná mapa  | Podklad a režim; správné oblasti nebo bod vyber kliknutím do mapy |
 
 Každá otázka může mít vysvětlení. Nová otázka přebírá typ předchozí, takže sady
 kartiček nebo doplňování sestavíš bez opakovaného přepínání typu. Náhled ukazuje

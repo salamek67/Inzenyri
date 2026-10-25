@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 import copy
+import math
 import base64, getpass, hashlib, json, os, shlex, subprocess, sys, tempfile, uuid
 import re
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -206,6 +208,74 @@ def valid_fill_question(question):
     )
 
 
+MAP_VIEWS = {
+    "world": ("Svět", (-180, -90, 180, 90)),
+    "europe": ("Evropa", (-25, 32, 45, 72)),
+    "africa": ("Afrika", (-20, -36, 55, 38)),
+    "asia": ("Asie", (25, -12, 180, 80)),
+    "northAmerica": ("Severní Amerika", (-170, 5, -50, 84)),
+    "southAmerica": ("Jižní Amerika", (-85, -57, -32, 15)),
+    "oceania": ("Oceánie", (110, -50, 180, 5)),
+}
+
+
+@lru_cache(maxsize=1)
+def map_countries():
+    try:
+        return json.loads((WEB / "maps" / "world.json").read_text())["countries"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise DataError("Chybí nebo je poškozený podklad web/maps/world.json.") from exc
+
+
+def valid_map_question(question):
+    if (
+        not isinstance(question.get("prompt"), str)
+        or not question["prompt"].strip()
+        or not isinstance(question.get("map"), str)
+        or question["map"] not in MAP_VIEWS
+    ):
+        return False
+    bounds = MAP_VIEWS[question["map"]][1]
+    if question.get("mode") == "regions":
+        targets = question.get("targets")
+        if (
+            not isinstance(targets, list)
+            or not 1 <= len(targets) <= 200
+            or not all(isinstance(value, str) for value in targets)
+            or len(set(targets)) != len(targets)
+        ):
+            return False
+        available = set()
+        for country in map_countries():
+            for polygon in country["polygons"]:
+                xs, ys = zip(*polygon[0])
+                if (
+                    max(xs) >= bounds[0]
+                    and min(xs) <= bounds[2]
+                    and max(ys) >= bounds[1]
+                    and min(ys) <= bounds[3]
+                ):
+                    available.add(country["id"])
+                    break
+        return set(targets) <= available
+    if question.get("mode") == "pin":
+        target = question.get("target")
+        tolerance = question.get("toleranceKm")
+        return (
+            isinstance(target, list)
+            and len(target) == 2
+            and all(
+                type(value) in (int, float) and math.isfinite(value) for value in target
+            )
+            and bounds[0] <= target[0] <= bounds[2]
+            and bounds[1] <= target[1] <= bounds[3]
+            and type(tolerance) in (int, float)
+            and math.isfinite(tolerance)
+            and 1 <= tolerance <= 2000
+        )
+    return False
+
+
 def normalize(value):
     if (
         not isinstance(value, dict)
@@ -243,6 +313,14 @@ def normalize(value):
             for question in questions:
                 if isinstance(question, dict) and question.get("type") == "binary":
                     question["type"] = "choice"
+                if (
+                    isinstance(question, dict)
+                    and question.get("type") == "map"
+                    and not valid_map_question(question)
+                ):
+                    raise DataError(
+                        "Neplatná mapová otázka: zvol podklad, oblasti nebo souřadnice a toleranci 1–2000 km."
+                    )
                 if (
                     isinstance(question, dict)
                     and question.get("type") == "fill"
@@ -627,6 +705,10 @@ def build_practice_question(number, count):
         "karticky": "flashcard",
         "kartičky": "flashcard",
         "flashcard": "flashcard",
+        "m": "map",
+        "mapa": "map",
+        "mapy": "map",
+        "map": "map",
         "d": "fill",
         "doplnovani": "fill",
         "doplňování": "fill",
@@ -637,7 +719,11 @@ def build_practice_question(number, count):
         "čárky": "punctuation",
         "interpunkce": "punctuation",
         "punctuation": "punctuation",
-    }.get(ask("Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky / [k]artičky").lower())
+    }.get(
+        ask(
+            "Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky / [k]artičky / [m]apa"
+        ).lower()
+    )
     if not kind:
         raise DataError("Neplatný typ otázky.")
     if kind == "choice":
@@ -655,6 +741,47 @@ def build_practice_question(number, count):
             "options": options,
             "answer": answer,
         }
+    elif kind == "map":
+        question = {"type": "map", "prompt": ask_multiline("Zadání mapové otázky")}
+        choices = list(MAP_VIEWS)
+        for index, key in enumerate(choices, 1):
+            print(f"  {index}. {MAP_VIEWS[key][0]}")
+        question["map"] = choices[ask_number("Podklad", 1, len(choices)) - 1]
+        mode = ask("Režim [o]blasti / [s]pendlík").lower()
+        if mode in {"o", "oblasti", "regions"}:
+            question["mode"] = "regions"
+            print(
+                "  Dostupné oblasti: "
+                + "; ".join(
+                    f"{country['id']} = {country['name']}"
+                    for country in sorted(map_countries(), key=lambda c: c["name"])
+                )
+            )
+            question["targets"] = (
+                ask("Správné kódy oblastí (např. CZE DEU AUT)")
+                .upper()
+                .replace(",", " ")
+                .split()
+            )
+        elif mode in {"s", "spendlik", "špendlík", "pin"}:
+            question["mode"] = "pin"
+            try:
+                latitude = float(
+                    ask("Zeměpisná šířka (sever +, jih −)").replace(",", ".")
+                )
+                longitude = float(
+                    ask("Zeměpisná délka (východ +, západ −)").replace(",", ".")
+                )
+                question["target"] = [longitude, latitude]
+                question["toleranceKm"] = float(
+                    ask("Tolerance v km (1–2000)").replace(",", ".")
+                )
+            except ValueError as exc:
+                raise DataError("Souřadnice a tolerance musí být čísla.") from exc
+        if not valid_map_question(question):
+            raise DataError(
+                "Zkontroluj mapu, režim, kódy oblastí nebo cílové souřadnice a toleranci."
+            )
     elif kind == "flashcard":
         prompt = ask_multiline("Přední strana kartičky")
         answer = ask_multiline("Zadní strana kartičky")
@@ -1036,6 +1163,15 @@ def info(index=None):
             for option_index, option in enumerate(options):
                 marker = "✓" if option_index == answer else "·"
                 print(f"      {marker} {option}")
+        elif kind == "map":
+            print(
+                f"      Mapa: {MAP_VIEWS.get(question.get('map'), ('?',))[0]} · {question.get('mode')}"
+            )
+            print(
+                f"      Cíl: {question.get('targets') if question.get('mode') == 'regions' else question.get('target')}"
+            )
+            if question.get("mode") == "pin":
+                print(f"      Tolerance: {question.get('toleranceKm')} km")
         elif kind == "flashcard":
             print(f"      {muted('Zadní strana:')} {question.get('answer', '')}")
         else:

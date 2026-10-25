@@ -1,5 +1,12 @@
 # Typy procvičování
 
+## Zeměpisné mapy
+
+Typ `map` umožňuje označit více států/území nebo umístit špendlík s tolerancí v
+kilometrech. Funguje na webu i v Androidu, včetně offline režimu. Otázky
+vytvoříš v lokálním editoru výběrem **Zeměpisná mapa**, nebo ve správci volbou
+`[m]apa`. Postup a společný formát dat jsou v [návodu k mapám](maps.md).
+
 ## Kartičky
 
 Typ `flashcard` funguje na webu i v Androidu. Nejprve se zobrazí přední strana,

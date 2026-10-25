@@ -1,0 +1,104 @@
+.quiz-map {
+  border: 1px solid var(--line, #ddd5ef);
+  border-radius: 16px;
+  overflow: hidden;
+  margin: 12px 0;
+  background: var(--solid, var(--surface, #fff));
+}
+.map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px;
+}
+.map-controls button {
+  border: 1px solid var(--line, #ddd5ef);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--solid, var(--surface, #fff));
+  color: var(--text, var(--ink, #252438));
+  cursor: pointer;
+  min-width: 40px;
+}
+.map-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #e2eff8;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.map-canvas path {
+  fill: #f2f0e8;
+  stroke: #889ba8;
+  stroke-width: 0.65;
+  cursor: pointer;
+}
+.map-canvas path.selected {
+  fill: #aa8de7;
+}
+.map-canvas path.correct {
+  fill: #82caa3;
+}
+.map-canvas path.wrong {
+  fill: #ed9e9e;
+}
+.map-canvas:focus,
+.map-canvas path:focus {
+  outline: none;
+}
+.map-canvas:focus-visible {
+  outline: 2px solid var(--violet, var(--accent, #7954d8));
+  outline-offset: -2px;
+}
+.map-canvas path:focus-visible {
+  stroke: #302063;
+  stroke-width: 2;
+  outline: none;
+}
+.map-marker {
+  fill: #7954d8;
+  stroke: white;
+  stroke-width: 2;
+}
+.map-marker.correct {
+  fill: #168c4d;
+}
+.map-marker.wrong {
+  fill: #cc3e51;
+}
+.map-link {
+  stroke: #6b657d;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+.map-status {
+  padding: 10px 14px 3px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  color: var(--text, var(--ink, #252438));
+}
+.quiz-map > small {
+  display: block;
+  padding: 7px 14px 12px;
+  font-size: 10px;
+  color: var(--muted, #737082);
+}
+body.dark .map-canvas {
+  background: #1e3546;
+}
+body.dark .map-canvas path {
+  fill: #454b50;
+  stroke: #8c9ba4;
+}
+body.dark .map-canvas path.selected {
+  fill: #8b6dca;
+}
+body.dark .map-canvas path.correct {
+  fill: #33875a;
+}
+body.dark .map-canvas path.wrong {
+  fill: #aa5565;
+}
