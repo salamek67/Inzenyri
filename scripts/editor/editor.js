@@ -830,6 +830,7 @@ async function save(event) {
   state.busy = true;
   updateSaveState();
   try {
+    const adding = state.id === null;
     const item = structuredClone(state.draft);
     if (!item.time) delete item.time;
     const result = await api("/api/items", {
@@ -839,7 +840,17 @@ async function save(event) {
     });
     applyData(result);
     state.busy = false;
-    openItem(result.tasks.find((entry) => entry.id === result.saved_id));
+    if (adding) {
+      state.draft = null;
+      state.id = null;
+      state.dirty = false;
+      $("editor").hidden = true;
+      $("empty").hidden = false;
+      renderList();
+      $("empty-new").focus({ preventScroll: true });
+    } else {
+      openItem(result.tasks.find((entry) => entry.id === result.saved_id));
+    }
     notify("Uloženo. Soukromá i šifrovaná databáze jsou aktuální.");
   } catch (error) {
     notify(error.message, true);

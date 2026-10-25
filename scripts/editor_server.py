@@ -9,6 +9,7 @@ import runpy
 import secrets
 import threading
 import uuid
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -344,16 +345,30 @@ def serve(port=8765):
         ) from exc
     server.token = secrets.token_urlsafe(32)
     server.database = database
+    url = f"http://127.0.0.1:{server.server_port}/#{server.token}"
     print(f"\n  Lokální editor · server {SERVER_VERSION}")
-    print(f"  http://127.0.0.1:{server.server_port}/#{server.token}")
+    print(f"  {url}")
     print(
-        "  Otevři odkaz v prohlížeči. Ctrl+C ukončí server. Uložení mění pouze lokální databázi.\n",
+        "  Otevírám editor v prohlížeči. Ctrl+C ukončí server. Uložení mění pouze lokální databázi.\n",
         flush=True,
     )
+
+    def open_browser():
+        try:
+            opened = webbrowser.open(url, new=2)
+        except (webbrowser.Error, OSError):
+            opened = False
+        if not opened:
+            print(
+                "  Prohlížeč se nepodařilo otevřít. Použij odkaz uvedený výše.",
+                flush=True,
+            )
+
     try:
+        threading.Thread(target=open_browser, daemon=True).start()
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nEditor ukončen.")
+        print("\nServer ukončen.")
     finally:
         server.server_close()
 

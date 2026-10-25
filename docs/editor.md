@@ -6,11 +6,15 @@ V kořeni projektu spusť:
 python3 script.py server
 ```
 
-Stejný příkaz `server` funguje v interaktivní nabídce správce. Otevři celý odkaz
-vypsaný do terminálu, například `http://127.0.0.1:8765/#…`. Část za `#` je
-náhodný přístupový klíč pro právě spuštěný server. Server je dostupný pouze na
-tomto počítači; pro jiný port použij například `python3 script.py server 8766`.
-Ukončíš ho pomocí Ctrl+C. Neprovádí automatické mazání minulých položek.
+Stejný příkaz `server` funguje v interaktivní nabídce správce. Editor se
+automaticky otevře v nové kartě výchozího prohlížeče. Pokud otevření není
+dostupné, použij celý odkaz vypsaný do terminálu, například
+`http://127.0.0.1:8765/#…`. Část za `#` je náhodný přístupový klíč pro právě
+spuštěný server. Server je dostupný pouze na tomto počítači; pro jiný port
+použij například `python3 script.py server 8766`. Ctrl+C zastaví server a uvolní
+jeho port. Při spuštění z nabídky se vrátíš do správce; při přímém spuštění se
+skript ukončí. Karta prohlížeče zůstane otevřená, ale server už neběží. Editor
+neprovádí automatické mazání minulých položek.
 
 Používá stejné Python závislosti jako správce (`scripts/requirements.txt`).
 Pokud už je databáze nastavená a lokálně uložené heslo platí, editor se otevře
@@ -28,6 +32,9 @@ disk. Chybějící databázi nejdřív nastav podle [základního návodu](tutor
   Markdown. Záložka **Náhled** ukáže formátovaný text před uložením.
 - **Duplikovat** připraví novou položku podle vybrané, včetně procvičování.
 - **Ctrl+S** (na macOS Cmd+S) uloží položku. **Ctrl+K** otevře hledání.
+- Po úspěšném přidání se formulář zavře a položka zůstane v přehledu. Při chybě
+  ukládání zůstane formulář rozepsaný. Úprava existující položky zůstává
+  otevřená.
 - Rozpracovaná data zůstávají pouze v paměti stránky. Při odchodu editor
   upozorní na neuložené změny; obsah formulářů se neukládá do úložiště
   prohlížeče.
