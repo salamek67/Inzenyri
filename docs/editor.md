@@ -87,9 +87,20 @@ nepřepíše. Pokud data změní jiná záložka nebo skript, uložení odmítne
 formulář rozepsaný. Nejdřív si zkopíruj potřebné rozepsané texty, potom použij
 **Načíst aktuální data** v levém panelu a proveď úpravu znovu.
 
-Editor nevytváří commity, tagy ani releasy, nepushuje a nemění verzi aplikace
-ani webu. Po dokončení použij běžný příkaz `commit` ve správci. Starší veřejný
-server `python3 scripts/serve.py` zůstává samostatně dostupný na portu 8000.
+Tlačítkem **Commit** v horní liště otevřeš přehled uložených změn projektu.
+Nejdřív ulož rozepsanou položku. Editor ukáže větev a všechny soubory, které
+zahrne; používá stejný seznam povolených projektových cest jako hlavní správce.
+Zahrnuje také změny zdrojů a dokumentace, nejen databázi. Soukromá složka
+`private/` se vynechá, stejně jako případné předem nastagované soubory mimo
+povolené cesty. Zadej zprávu a potvrď **Vytvořit commit**. Při změně souborů od
+náhledu vyžaduje nový přehled a nové potvrzení. Chyby Git zobrazí v dialogu;
+změny zůstávají lokálně a při chybě mohou být připravené v indexu.
+
+Commit z editoru je lokální: nepushuje, nemění verze a nevytváří tagy ani
+releasy. Pro publikování a případný bump použij hlavní správce. Musí být
+nastavené Git jméno a e-mail a repozitář musí mít existující větev s historií.
+Starší veřejný server `python3 scripts/serve.py` zůstává samostatně dostupný na
+portu 8000.
 
 Soubory editoru jsou v `scripts/editor/`, server v `scripts/editor_server.py`;
 nejsou součástí veřejného webu ani Pages artefaktu. HTTP server zpřístupňuje

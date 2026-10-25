@@ -54,6 +54,34 @@ COMMANDS = (
     "quit",
 )
 SESSION_PASSWORD = None
+COMMIT_PATHS = (
+    "web",
+    "scripts",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "data.enc.json",
+    "script.py",
+    "preview.sh",
+    ".gitignore",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    ".github",
+    "app",
+    "index.html",
+    "app.js",
+    "web-settings.js",
+    "web-qr.js",
+    "web-formatting.js",
+    "practice-progress.js",
+    "web-offline.js",
+    "sw.js",
+    "vendor",
+    "favicon.ico",
+    "favicon.png",
+    "apple-touch-icon.png",
+    "requirements.txt",
+)
 
 
 def github_cli_environment():
@@ -1812,34 +1840,7 @@ def commit(message=None):
         success("Data ověřena, zvýšena verze DB a obsah znovu zašifrován.")
     else:
         print(f"  {style('✓','32')} {muted('Šifrovaná data ověřena; DB se nemění.')}\n")
-    candidates = [
-        "web",
-        "scripts",
-        "docs",
-        "README.md",
-        "LICENSE",
-        "data.enc.json",
-        "script.py",
-        "preview.sh",
-        ".gitignore",
-        "AGENTS.md",
-        "CHANGELOG.md",
-        ".github",
-        "app",
-        "index.html",
-        "app.js",
-        "web-settings.js",
-        "web-qr.js",
-        "web-formatting.js",
-        "practice-progress.js",
-        "web-offline.js",
-        "sw.js",
-        "vendor",
-        "favicon.ico",
-        "favicon.png",
-        "apple-touch-icon.png",
-        "requirements.txt",
-    ]
+    candidates = COMMIT_PATHS
     files = [
         path
         for path in candidates

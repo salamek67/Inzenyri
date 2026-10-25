@@ -22,6 +22,7 @@
         ></a
       >
       <div class="top-actions">
+        <button id="open-commit" class="secondary" hidden>Commit</button>
         <span id="connection" class="connection">Připojuji…</span
         ><button id="theme" class="icon-button" aria-label="Přepnout vzhled">
           ◐
@@ -238,6 +239,39 @@
           <button value="cancel" class="secondary">Zrušit</button
           ><button id="confirm-yes" value="yes" class="primary">
             Pokračovat
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="git-dialog" aria-labelledby="git-title">
+      <form id="git-form">
+        <h2 id="git-title">Commit změn</h2>
+        <p>
+          Vytvoří lokální commit uložených změn projektu. Verze, tagy ani GitHub
+          se tím nemění.
+        </p>
+        <p id="git-summary" role="status">Načítám změny…</p>
+        <ul id="git-files" class="git-files"></ul>
+        <label class="field"
+          ><span>Zpráva commitu</span
+          ><textarea
+            id="git-message"
+            rows="3"
+            maxlength="2000"
+            required
+            placeholder="Např. Doplnit testy na příští týden"
+          ></textarea>
+        </label>
+        <p id="git-error" class="error" role="alert"></p>
+        <button id="git-refresh" type="button" class="secondary">
+          Načíst změny znovu
+        </button>
+        <div class="dialog-actions">
+          <button id="git-cancel" type="button" class="secondary">
+            Zrušit
+          </button>
+          <button id="git-submit" type="submit" class="primary" disabled>
+            Vytvořit commit
           </button>
         </div>
       </form>

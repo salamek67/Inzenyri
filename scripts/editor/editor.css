@@ -920,6 +920,28 @@ dialog p {
   margin-top: 25px;
 }
 
+#git-dialog {
+  max-width: 640px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#git-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.git-files {
+  max-height: 220px;
+  overflow: auto;
+  padding-left: 22px;
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+.git-files li {
+  padding: 3px 0;
+  font-size: 13px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

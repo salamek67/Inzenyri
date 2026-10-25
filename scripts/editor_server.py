@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import runpy
 import secrets
+import subprocess
 import threading
 import uuid
 import webbrowser
@@ -16,7 +18,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = Path(__file__).resolve().parent / "editor"
-SERVER_VERSION = "1.1.0"
+SERVER_VERSION = "1.1.1"
 
 
 class EditorError(Exception):
@@ -33,6 +35,7 @@ class Database:
         self.encrypted = root / "data.enc.json"
         self.password = self.manager["load_password"]() if root == ROOT else None
         self.lock = threading.RLock()
+        self.repository = Repository(root, self.manager["COMMIT_PATHS"])
 
     def snapshot(self):
         try:
@@ -230,6 +233,130 @@ class Database:
         }
 
 
+class Repository:
+    """Local commits limited to the same project paths as the CLI manager."""
+
+    def __init__(self, root, paths):
+        self.root = root.resolve()
+        self.paths = paths
+
+    def git(self, *args):
+        try:
+            result = subprocess.run(
+                ["git", "--literal-pathspecs", *args],
+                cwd=self.root,
+                capture_output=True,
+                timeout=60,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise EditorError(
+                "Git není dostupný nebo operace trvala příliš dlouho. Zkontroluj stav repozitáře."
+            ) from exc
+        if result.returncode:
+            detail = (
+                (result.stderr or result.stdout)
+                .decode("utf-8", errors="replace")
+                .strip()[:1500]
+            )
+            raise EditorError(f"Git operace se nezdařila: {detail}")
+        return result.stdout
+
+    def preview(self):
+        top = self.git("rev-parse", "--show-toplevel").decode().strip()
+        if Path(top).resolve() != self.root:
+            raise EditorError("Editor musí běžet v kořeni Git repozitáře projektu.")
+        head = self.git("rev-parse", "HEAD").decode().strip()
+        branch = self.git("branch", "--show-current").decode().strip()
+        if not branch:
+            raise EditorError("Nejdřív přepni repozitář na větev; HEAD je odpojený.")
+        for name in (
+            "MERGE_HEAD",
+            "CHERRY_PICK_HEAD",
+            "REVERT_HEAD",
+            "rebase-merge",
+            "rebase-apply",
+        ):
+            path = Path(os.fsdecode(self.git("rev-parse", "--git-path", name)).strip())
+            if (self.root / path).exists():
+                raise EditorError(
+                    "Nejdřív dokonči probíhající merge, rebase nebo cherry-pick v terminálu."
+                )
+        names = set()
+        for args in (
+            ("diff", "--no-renames", "--name-only", "-z", "HEAD"),
+            ("ls-files", "--others", "--exclude-standard", "-z"),
+        ):
+            names.update(
+                os.fsdecode(name) for name in self.git(*args).split(b"\0") if name
+            )
+        files = sorted(
+            name
+            for name in names
+            if any(name == path or name.startswith(path + "/") for path in self.paths)
+        )
+        digest = hashlib.sha256((head + "\0" + branch).encode())
+        for name in files:
+            path = self.root / name
+            digest.update(b"\0" + os.fsencode(name) + b"\0")
+            try:
+                if path.is_symlink():
+                    digest.update(b"link\0" + os.fsencode(os.readlink(path)))
+                elif path.is_file():
+                    digest.update(b"file\0" + str(path.stat().st_mode).encode() + b"\0")
+                    content_hash = hashlib.sha256()
+                    with path.open("rb") as source:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            content_hash.update(chunk)
+                    digest.update(content_hash.digest())
+                elif not path.exists():
+                    digest.update(b"deleted")
+                else:
+                    raise EditorError(f"Cestu {name} nelze commitnout z editoru.")
+            except OSError as exc:
+                raise EditorError(
+                    "Soubory se změnily nebo je nelze přečíst. Načti nový přehled.", 409
+                ) from exc
+        return {
+            "files": files,
+            "excluded": len(names) - len(files),
+            "branch": branch,
+            "revision": digest.hexdigest(),
+        }
+
+    def commit(self, payload):
+        message = payload.get("message")
+        if (
+            not isinstance(message, str)
+            or not 1 <= len(message.strip()) <= 2000
+            or "\0" in message
+        ):
+            raise EditorError("Zadej zprávu commitu (1–2000 znaků).")
+        preview = self.preview()
+        if payload.get("revision") != preview["revision"]:
+            raise EditorError(
+                "Soubory se od náhledu změnily. Načti nový přehled a commit potvrď znovu.",
+                409,
+            )
+        if not preview["files"]:
+            raise EditorError("Žádné projektové změny k commitnutí.")
+        files = preview["files"]
+        self.git("diff", "--check", "--", *files)
+        self.git("add", "-A", "--", *files)
+        if self.preview()["revision"] != preview["revision"]:
+            raise EditorError(
+                "Během přípravy se soubory změnily. Načti nový přehled; změny zůstávají lokálně.",
+                409,
+            )
+        # --only prevents unrelated pre-staged files from entering this commit.
+        self.git("commit", "--only", "-m", message.strip(), "--", *files)
+        return {
+            "commit": self.git("rev-parse", "--short", "HEAD").decode().strip(),
+            "branch": preview["branch"],
+            "files": files,
+        }
+
+
 class EditorHandler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
@@ -267,6 +394,9 @@ class EditorHandler(BaseHTTPRequestHandler):
                 with self.server.database.lock:
                     if not post and path == "/api/state":
                         return self.send(200, self.server.database.state())
+                    if not post and path == "/api/git":
+                        self.server.database.read()
+                        return self.send(200, self.server.database.repository.preview())
                     if post:
                         if (
                             self.headers.get("Content-Type", "").split(";")[0]
@@ -293,6 +423,11 @@ class EditorHandler(BaseHTTPRequestHandler):
                                 self.server.database.password = previous
                                 raise
                             return self.send(200, state)
+                        if path == "/api/commit":
+                            self.server.database.read()
+                            return self.send(
+                                200, self.server.database.repository.commit(payload)
+                            )
                         if path in {"/api/items", "/api/delete"}:
                             return self.send(
                                 200,

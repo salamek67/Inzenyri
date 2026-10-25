@@ -169,6 +169,7 @@ function updateSaveState() {
     ? "Šifruji a ukládám databázi."
     : "Uložení zahrnuje i šifrovanou databázi.";
   $("save").disabled = state.busy || state.imageLoads > 0;
+  $("open-commit").disabled = state.busy || state.imageLoads > 0;
   for (const id of ["delete", "duplicate", "new", "reload"])
     $(id).disabled = state.busy || state.imageLoads > 0;
   // Prevent edits during an in-flight save from being overwritten by its response.
@@ -183,6 +184,7 @@ function applyData(result) {
   $("connection").title = `Verze DB ${result.version}`;
   $("app").hidden = false;
   $("gate").hidden = true;
+  $("open-commit").hidden = false;
   renderList();
 }
 async function load() {
@@ -190,6 +192,7 @@ async function load() {
     applyData(await api("/api/state"));
   } catch (error) {
     $("app").hidden = true;
+    $("open-commit").hidden = true;
     $("gate").hidden = false;
     $("gate-title").textContent =
       error.status === 401
@@ -923,6 +926,82 @@ async function save(event) {
   }
 }
 
+let gitPreview = null;
+function gitBusy(busy) {
+  state.busy = busy;
+  updateSaveState();
+  for (const id of ["git-refresh", "git-cancel", "git-message"])
+    $(id).disabled = busy;
+  $("git-submit").disabled = busy || !gitPreview?.files.length;
+}
+async function refreshGit() {
+  gitPreview = null;
+  gitBusy(true);
+  $("git-summary").textContent = "Načítám změny…";
+  $("git-error").textContent = "";
+  $("git-files").replaceChildren();
+  try {
+    gitPreview = await api("/api/git");
+    $("git-summary").textContent =
+      `Větev ${gitPreview.branch} · souborů ke commitu: ${gitPreview.files.length}.` +
+      (gitPreview.excluded
+        ? ` Dalších ${gitPreview.excluded} cest mimo pravidla projektu se vynechá.`
+        : "");
+    for (const name of gitPreview.files)
+      $("git-files").append(el("li", "", name));
+    if (!gitPreview.files.length)
+      $("git-summary").textContent +=
+        " Všechny projektové změny jsou commitnuté.";
+  } catch (error) {
+    $("git-summary").textContent = "Přehled změn není dostupný.";
+    $("git-error").textContent = error.message;
+  } finally {
+    gitBusy(false);
+  }
+}
+$("open-commit").addEventListener("click", async () => {
+  if (state.busy || state.imageLoads) return;
+  if (state.dirty) {
+    notify("Nejdřív ulož rozepsanou položku, potom vytvoř commit.", true);
+    return;
+  }
+  $("git-dialog").showModal();
+  await refreshGit();
+  $("git-message").focus();
+});
+$("git-refresh").addEventListener("click", refreshGit);
+$("git-cancel").addEventListener("click", () => {
+  if (!state.busy) $("git-dialog").close();
+});
+$("git-dialog").addEventListener("cancel", (event) => {
+  if (state.busy) event.preventDefault();
+});
+$("git-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.busy || !gitPreview?.files.length) return;
+  gitBusy(true);
+  $("git-error").textContent = "";
+  $("git-summary").textContent = "Vytvářím commit…";
+  try {
+    const result = await api("/api/commit", {
+      revision: gitPreview.revision,
+      message: $("git-message").value,
+    });
+    $("git-dialog").close();
+    $("git-message").value = "";
+    $("open-commit").title = `Poslední commit: ${result.commit}`;
+    notify(`Commit ${result.commit} vytvořen na větvi ${result.branch}.`);
+    gitPreview = null;
+  } catch (error) {
+    gitPreview = null;
+    $("git-summary").textContent =
+      "Commit nebyl potvrzen. Načti aktuální přehled změn.";
+    $("git-error").textContent = error.message;
+  } finally {
+    gitBusy(false);
+  }
+});
+
 $("theme").addEventListener("click", () => {
   document.body.classList.toggle("dark");
   localStorage.setItem(
@@ -1043,7 +1122,13 @@ document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;
   if (event.key.toLowerCase() === "s") {
     event.preventDefault();
-    if (!$("app").hidden && state.draft && !$("confirm").open) save();
+    if (
+      !$("app").hidden &&
+      state.draft &&
+      !$("confirm").open &&
+      !$("git-dialog").open
+    )
+      save();
   }
   if (event.key.toLowerCase() === "k") {
     event.preventDefault();
