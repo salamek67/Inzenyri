@@ -16,7 +16,7 @@ function writePreference(name, value) {
 }
 
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.7.0";
+const PAGE_VERSION = "2.8.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -1049,6 +1049,7 @@ function renderQuizQuestion() {
     `Dokončeno ${state.current} z ${state.questions.length} otázek`,
   );
   root.append(bar);
+  const image = QuizImage.create(question.image);
   renderFormattedText(
     heading,
     question.type === "punctuation"
@@ -1073,6 +1074,7 @@ function renderQuizQuestion() {
   });
   if (question.type === "flashcard") {
     root.append(progress, heading);
+    if (image) root.append(image);
     if (
       typeof question.prompt !== "string" ||
       !question.prompt.trim() ||
@@ -1161,6 +1163,7 @@ function renderQuizQuestion() {
     return;
   }
   if (question.type === "choice") {
+    if (image) answers.append(image);
     question.options.forEach((option, index) => {
       const label = document.createElement("label"),
         radio = document.createElement("input"),
@@ -1178,11 +1181,14 @@ function renderQuizQuestion() {
       answers.append(label);
     });
   } else if (fill) {
+    if (image) answers.append(image);
     answers.append(fill.element);
   } else if (map) {
+    if (image) answers.append(image);
     answers.append(map.element);
   } else {
     const input = document.createElement("textarea");
+    if (image) answers.append(image);
     input.className = "quiz-text";
     input.rows = 3;
     input.name = "answerText";

@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = Path(__file__).resolve().parent / "editor"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 
 
 class EditorError(Exception):
@@ -142,6 +142,20 @@ class Database:
                     raise EditorError(
                         f"Procvičování „{quiz.get('title') or 'Bez názvu'}“, otázka {number}: doplň platné zadání a odpověď."
                     )
+                if "image" in q and not self.manager["valid_question_image"](
+                    q["image"]
+                ):
+                    raise EditorError(
+                        f"Otázka {number}: obrázek musí být PNG/JPEG do 512 KB a 2048 × 2048 bodů, popis nejvýše 1000 znaků."
+                    )
+        image_bytes = sum(
+            len(self.manager["base64"].b64decode(q["image"]["data"]))
+            for quiz in quizzes
+            for q in quiz["questions"]
+            if "image" in q
+        )
+        if image_bytes > self.manager["ITEM_IMAGE_MAX_BYTES"]:
+            raise EditorError("Obrázky jedné položky mohou mít dohromady nejvýše 6 MB.")
         return item
 
     def mutate(self, payload, delete=False):
@@ -260,7 +274,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                         ):
                             raise EditorError("Očekáván JSON.", 415)
                         size = int(self.headers.get("Content-Length", "0"))
-                        if size <= 0 or size > 4 * 1024 * 1024:
+                        if size <= 0 or size > 12 * 1024 * 1024:
                             raise EditorError(
                                 "Požadavek je příliš velký nebo prázdný.", 413
                             )
@@ -294,6 +308,14 @@ class EditorHandler(BaseHTTPRequestHandler):
                 "/js/quiz-map.js": (
                     ROOT / "web/js/quiz-map.js",
                     "text/javascript; charset=utf-8",
+                ),
+                "/js/quiz-image.js": (
+                    ROOT / "web/js/quiz-image.js",
+                    "text/javascript; charset=utf-8",
+                ),
+                "/css/quiz-image.css": (
+                    ROOT / "web/css/quiz-image.css",
+                    "text/css; charset=utf-8",
                 ),
                 "/css/quiz-map.css": (
                     ROOT / "web/css/quiz-map.css",

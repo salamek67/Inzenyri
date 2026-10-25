@@ -5,6 +5,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 import org.json.JSONObject
 
 internal data class GitHubCredentials(
@@ -79,18 +80,50 @@ internal object GitHubApiClient {
         )
     }
 
+    /** Use the immutable blob when Contents omits Base64 for files above 1 MB. */
+    fun databaseContent(
+        owner: String,
+        repository: String,
+        metadata: JSONObject,
+        token: String?,
+    ): String {
+        val content =
+            metadata.optString("content").ifBlank {
+                metadata.optJSONObject("content")?.optString("content").orEmpty()
+            }
+        if (content.isNotBlank())
+            return String(Base64.getMimeDecoder().decode(content), StandardCharsets.UTF_8)
+        val sha = metadata.getString("sha")
+        require(sha.matches(Regex("[0-9a-fA-F]{40}"))) { "GitHub nevrátil platné SHA databáze." }
+        return request(
+            "repos/$owner/$repository/git/blobs/$sha",
+            token = token,
+            accept = "application/vnd.github.raw+json",
+        )
+    }
+
     fun request(
         path: String,
         method: String = "GET",
         token: String? = null,
         body: String? = null,
+        accept: String? = null,
     ): String {
         val connection =
             (URL("https://api.github.com/$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 connectTimeout = 15_000
                 readTimeout = 30_000
-                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty(
+                    "Accept",
+                    accept
+                        ?: if (
+                            method == "GET" &&
+                                path.substringBefore('?').endsWith("/contents/data.enc.json")
+                        )
+                            "application/vnd.github.object+json"
+                        else "application/vnd.github+json",
+                )
                 setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
                 setRequestProperty("User-Agent", "Inzenyri-Android")
                 if (token != null) setRequestProperty("Authorization", "Bearer $token")

@@ -276,6 +276,76 @@ def valid_map_question(question):
     return False
 
 
+IMAGE_MAX_BYTES = 512 * 1024
+ITEM_IMAGE_MAX_BYTES = 6 * 1024 * 1024
+
+
+def question_image_dimensions(raw):
+    """Read bounded raster headers without executing an external decoder."""
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        if (
+            len(raw) < 45
+            or raw[8:16] != b"\x00\x00\x00\rIHDR"
+            or raw[-12:] != b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        ):
+            raise ValueError("Neplatný PNG.")
+        return (
+            "image/png",
+            int.from_bytes(raw[16:20], "big"),
+            int.from_bytes(raw[20:24], "big"),
+        )
+    if raw.startswith(b"\xff\xd8") and raw.endswith(b"\xff\xd9"):
+        offset = 2
+        while offset < len(raw):
+            if raw[offset] != 255:
+                break
+            while offset < len(raw) and raw[offset] == 255:
+                offset += 1
+            if offset >= len(raw):
+                break
+            marker = raw[offset]
+            offset += 1
+            if marker in {0xD9, 0xDA}:
+                break
+            if marker in {0x01, *range(0xD0, 0xD8)}:
+                continue
+            size = int.from_bytes(raw[offset : offset + 2], "big")
+            if size < 2 or offset + size > len(raw):
+                break
+            if marker in {0xC0, 0xC1, 0xC2} and size >= 8:
+                return (
+                    "image/jpeg",
+                    int.from_bytes(raw[offset + 5 : offset + 7], "big"),
+                    int.from_bytes(raw[offset + 3 : offset + 5], "big"),
+                )
+            offset += size
+    raise ValueError("Podporovaný je PNG nebo JPEG.")
+
+
+def valid_question_image(image):
+    if not isinstance(image, dict) or not isinstance(image.get("data"), str):
+        return False
+    if not 0 < len(image["data"]) <= ((IMAGE_MAX_BYTES + 2) // 3) * 4:
+        return False
+    try:
+        raw = base64.b64decode(image["data"], validate=True)
+        mime, width, height = question_image_dimensions(raw)
+        return (
+            len(raw) <= IMAGE_MAX_BYTES
+            and image.get("mime") == mime
+            and type(image.get("width")) is int
+            and type(image.get("height")) is int
+            and image["width"] == width
+            and image["height"] == height
+            and 1 <= width <= 2048
+            and 1 <= height <= 2048
+            and isinstance(image.get("alt"), str)
+            and len(image["alt"]) <= 1000
+        )
+    except (ValueError, TypeError):
+        return False
+
+
 def normalize(value):
     if (
         not isinstance(value, dict)
@@ -306,11 +376,22 @@ def normalize(value):
         quizzes = (
             [item["quiz"]] if isinstance(item.get("quiz"), dict) else []
         ) + extra_quizzes
+        image_bytes = 0
         for quiz in quizzes:
             questions = quiz.get("questions", [])
             if not isinstance(questions, list):
                 raise DataError("Pole quiz.questions musí být seznam.")
             for question in questions:
+                if (
+                    isinstance(question, dict)
+                    and "image" in question
+                    and not valid_question_image(question["image"])
+                ):
+                    raise DataError(
+                        "Obrázek musí být PNG/JPEG do 512 KB, nejvýše 2048 × 2048 bodů, s platným popisem."
+                    )
+                if isinstance(question, dict) and "image" in question:
+                    image_bytes += len(base64.b64decode(question["image"]["data"]))
                 if isinstance(question, dict) and question.get("type") == "binary":
                     question["type"] = "choice"
                 if (
@@ -340,6 +421,8 @@ def normalize(value):
                     raise DataError(
                         "Kartička musí mít vyplněnou přední i zadní stranu."
                     )
+        if image_bytes > ITEM_IMAGE_MAX_BYTES:
+            raise DataError("Obrázky jedné položky mohou mít dohromady nejvýše 6 MB.")
     return {"tasks": value["tasks"]}
 
 
@@ -865,6 +948,27 @@ def build_practice_question(number, count):
             "ignoreCase": ask("Ignorovat velikost písmen? [a/n]").lower()
             in {"a", "ano"},
         }
+    image_path = ask("Obrázek PNG/JPEG do 512 KB (cesta, Enter = bez obrázku)")
+    if image_path:
+        path = Path(image_path).expanduser()
+        try:
+            with path.open("rb") as source:
+                raw = source.read(IMAGE_MAX_BYTES + 1)
+            mime, width, height = question_image_dimensions(raw)
+            image = {
+                "mime": mime,
+                "data": b64(raw),
+                "width": width,
+                "height": height,
+                "alt": ask("Popis obrázku (volitelný)"),
+            }
+        except (OSError, ValueError) as exc:
+            raise DataError(
+                "Obrázek se nepodařilo načíst. Použij PNG nebo JPEG."
+            ) from exc
+        if not valid_question_image(image):
+            raise DataError("Obrázek překračuje limit 512 KB nebo 2048 × 2048 bodů.")
+        question["image"] = image
     explanation = ask_multiline("Vysvětlení při chybě (volitelné)")
     if explanation:
         question["explanation"] = explanation

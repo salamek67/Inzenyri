@@ -53,6 +53,9 @@ promíchání otázek a zvol typ jednotlivých otázek:
 | Kartička        | Přední a zadní stranu                                             |
 | Zeměpisná mapa  | Podklad a režim; správné oblasti nebo bod vyber kliknutím do mapy |
 
+U všech typů lze nahrát také [obrázek k zadání](images.md); zobrazí se v
+náhledu, na webu i v Androidu a odstraní se spolu s otázkou.
+
 Každá otázka může mít vysvětlení. Nová otázka přebírá typ předchozí, takže sady
 kartiček nebo doplňování sestavíš bez opakovaného přepínání typu. Náhled ukazuje
 i správné odpovědi; jde o autorskou kontrolu obsahu, nikoli běh testu.

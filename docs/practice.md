@@ -1,5 +1,7 @@
 # Typy procvičování
 
+Ke všem typům lze přidat [obrázek uložený v šifrované databázi](images.md).
+
 ## Zeměpisné mapy
 
 Typ `map` umožňuje označit více států/území nebo umístit špendlík s tolerancí v

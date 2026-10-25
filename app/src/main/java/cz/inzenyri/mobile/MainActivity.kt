@@ -605,12 +605,7 @@ class MainActivity : ComponentActivity() {
                     token = token,
                 ),
             )
-        val encoded =
-            response.optString("content").ifBlank {
-                response.optJSONObject("content")?.optString("content").orEmpty()
-            }
-        require(encoded.isNotBlank()) { "GitHub API nevrátil obsah databáze." }
-        val raw = String(Base64.getMimeDecoder().decode(encoded), StandardCharsets.UTF_8)
+        val raw = GitHubApiClient.databaseContent(GITHUB_OWNER, GITHUB_REPO, response, token)
         JSONObject(raw)
         return raw
     }
@@ -2635,6 +2630,9 @@ class MainActivity : ComponentActivity() {
                     isFillViewport = true
                     addView(body)
                 }
+            QuestionImageView.create(this, question)?.let { image ->
+                body.addView(image, margin(0, 0, 0, 18))
+            }
             page.addView(bodyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
             val footer =
                 LinearLayout(this).apply {
@@ -3411,13 +3409,10 @@ class MainActivity : ComponentActivity() {
                 val path =
                     "repos/$GITHUB_OWNER/$GITHUB_REPO/contents/data.enc.json?ref=$GITHUB_BRANCH"
                 val current = JSONObject(githubRequest(path, token = token))
-                val encodedContent =
-                    current.optString("content").ifBlank {
-                        current.optJSONObject("content")?.optString("content").orEmpty()
-                    }
-                require(encodedContent.isNotBlank()) { "GitHub API nevrátil obsah databáze." }
-                val content = Base64.getMimeDecoder().decode(encodedContent)
-                val remoteEnvelope = JSONObject(String(content, StandardCharsets.UTF_8))
+                val remoteEnvelope =
+                    JSONObject(
+                        GitHubApiClient.databaseContent(GITHUB_OWNER, GITHUB_REPO, current, token),
+                    )
                 val remotePlain = decrypt(remoteEnvelope, password ?: error("Databáze je zamčená."))
                 val remoteDatabase = JSONObject(String(remotePlain, StandardCharsets.UTF_8))
                 if (databaseHash(remoteDatabase) != originalDatabaseHash) {

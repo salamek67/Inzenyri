@@ -21,6 +21,7 @@ const state = {
   id: null,
   dirty: false,
   busy: false,
+  imageLoads: 0,
   tab: "edit",
 };
 let token =
@@ -139,6 +140,10 @@ function confirmAction(title, message, yes = "Pokračovat") {
   });
 }
 async function canLeave() {
+  if (state.imageLoads > 0) {
+    notify("Počkej na zpracování obrázku.");
+    return false;
+  }
   return (
     !state.dirty ||
     confirmAction(
@@ -163,13 +168,13 @@ function updateSaveState() {
   $("save-detail").textContent = state.busy
     ? "Šifruji a ukládám databázi."
     : "Uložení zahrnuje i šifrovanou databázi.";
-  $("save").disabled = state.busy;
+  $("save").disabled = state.busy || state.imageLoads > 0;
   for (const id of ["delete", "duplicate", "new", "reload"])
-    $(id).disabled = state.busy;
+    $(id).disabled = state.busy || state.imageLoads > 0;
   // Prevent edits during an in-flight save from being overwritten by its response.
   $("edit-panel")
     .querySelectorAll("input,textarea,select,button")
-    .forEach((node) => (node.disabled = state.busy));
+    .forEach((node) => (node.disabled = state.busy || state.imageLoads > 0));
 }
 function applyData(result) {
   state.tasks = result.tasks;
@@ -484,6 +489,7 @@ function renderQuizzes() {
           next[nextType === "punctuation" ? "sentence" : "prompt"] =
             q.prompt || q.sentence || "";
           if (q.explanation) next.explanation = q.explanation;
+          if (q.image) next.image = q.image;
           quiz.questions[questionIndex] = next;
           markDirty();
           renderQuizzes();
@@ -511,6 +517,53 @@ function renderQuizzes() {
         ),
       );
       card.append(head);
+      const imageLabel = el("label", "field"),
+        upload = el("input");
+      upload.type = "file";
+      upload.accept = "image/png,image/jpeg";
+      imageLabel.append(
+        el("span", "", "Obrázek k otázce · PNG/JPEG (volitelné)"),
+        upload,
+      );
+      card.append(imageLabel);
+      upload.addEventListener("change", async () => {
+        const draft = state.draft;
+        state.imageLoads++;
+        updateSaveState();
+        upload.disabled = true;
+        try {
+          const image = await QuizImage.importFile(upload.files[0]);
+          if (state.draft !== draft || !quiz.questions.includes(q)) return;
+          q.image = image;
+          markDirty();
+          renderQuizzes();
+        } catch (error) {
+          notify(error.message, true);
+        } finally {
+          state.imageLoads--;
+          updateSaveState();
+          upload.disabled = false;
+          upload.value = "";
+        }
+      });
+      if (q.image) {
+        const preview = QuizImage.create(q.image);
+        if (preview) card.append(preview);
+        field(
+          card,
+          "Popis obrázku pro čtečku obrazovky",
+          q.image.alt,
+          (value) => (q.image.alt = value),
+          { single: true },
+        ).maxLength = 1000;
+        card.append(
+          button("Odstranit obrázek", () => {
+            delete q.image;
+            markDirty();
+            renderQuizzes();
+          }),
+        );
+      }
       field(
         card,
         q.type === "flashcard"
@@ -776,6 +829,8 @@ function renderPreview() {
       );
       markdown(heading, q.prompt || q.sentence);
       card.append(heading);
+      const image = QuizImage.create(q.image);
+      if (image) card.append(image);
       if (q.template) {
         const template = el("p");
         template.textContent = q.template;
@@ -821,6 +876,10 @@ function showTab(tab) {
 }
 async function save(event) {
   event?.preventDefault();
+  if (state.imageLoads > 0) {
+    notify("Počkej na zpracování obrázku.");
+    return;
+  }
   if (!state.draft || state.busy) return;
   if (!$("item-form").checkValidity()) {
     showTab("edit");
@@ -992,7 +1051,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("beforeunload", (event) => {
-  if (state.dirty || state.busy) {
+  if (state.dirty || state.busy || state.imageLoads > 0) {
     event.preventDefault();
     event.returnValue = "";
   }
