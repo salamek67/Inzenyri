@@ -1586,6 +1586,40 @@ def android_version():
     return source, match, tuple(map(int, match.groups()[1:4]))
 
 
+def committed_android_version():
+    source = subprocess.run(
+        ["git", "show", "HEAD:app/build.gradle.kts"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    match = re.search(
+        r'(?m)^\s*versionName = providers\.gradleProperty\("appVersionName"\)\.orElse\("(\d+\.\d+\.\d+)"\)',
+        source,
+    )
+    if not match:
+        raise DataError("V HEAD chybí výchozí verze Android aplikace.")
+    return match.group(1)
+
+
+def latest_android_tag(before=None):
+    tags = subprocess.run(
+        ["git", "tag", "--list"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    versions = [
+        tag
+        for tag in tags
+        if re.fullmatch(r"\d+\.\d+\.\d+", tag)
+        and (before is None or tuple(map(int, tag.split("."))) < before)
+    ]
+    return max(versions, key=lambda tag: tuple(map(int, tag.split("."))), default=None)
+
+
 def offer_android_version_bump(*, release=True, create_tag=False):
     source, match, version = android_version()
     current = ".".join(map(str, version))
@@ -1672,7 +1706,7 @@ def bump():
     )
     offer_web_version_bump()
     offer_server_version_bump()
-    offer_android_version_bump(release=False, create_tag=True)
+    offer_android_version_bump(release=False)
 
 
 def consume_changelog_category(section):
@@ -1873,9 +1907,25 @@ def commit(message=None):
     if touches_server:
         offer_server_version_bump()
     if touches_android_app:
-        android_bump_result = offer_android_version_bump()
-        if android_bump_result:
-            android_previous_version, android_bump = android_bump_result
+        _, _, working_android_version = android_version()
+        working_android_version = ".".join(map(str, working_android_version))
+        previous_android_version = committed_android_version()
+        working_tuple = tuple(map(int, working_android_version.split(".")))
+        committed_tuple = tuple(map(int, previous_android_version.split(".")))
+        if working_tuple > committed_tuple:
+            android_previous_version = previous_android_version
+            android_bump = working_android_version
+        elif not subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{working_android_version}"],
+            cwd=ROOT,
+        ).returncode:
+            android_previous_version = latest_android_tag(working_tuple)
+            if android_previous_version:
+                android_bump = working_android_version
+        else:
+            android_bump_result = offer_android_version_bump()
+            if android_bump_result:
+                android_previous_version, android_bump = android_bump_result
     data, password = open_data()
     if touches_data:
         save(data, password, next_db_version())
