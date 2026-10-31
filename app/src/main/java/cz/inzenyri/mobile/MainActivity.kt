@@ -3117,16 +3117,16 @@ class MainActivity : ComponentActivity() {
         quizArticleButton?.text =
             if (quizArticleMode) "Typ odpovědi: člen + slovo" else "Typ odpovědi: běžný text"
         originalQuizIsSimpleText = simpleTextQuestion
-        originalQuizPrompt = if (simpleTextQuestion) firstQuestion.optString("prompt") else ""
+        originalQuizPrompt =
+            firstQuestion?.takeIf { simpleTextQuestion }?.optString("prompt").orEmpty()
         originalQuizAnswers =
-            if (simpleTextQuestion) {
-                firstQuestion
-                    .optJSONArray("answers")
-                    ?.let { answers ->
-                        (0 until answers.length()).joinToString(" | ") { answers.optString(it) }
-                    }
-                    .orEmpty()
-            } else ""
+            firstQuestion
+                ?.takeIf { simpleTextQuestion }
+                ?.optJSONArray("answers")
+                ?.let { answers ->
+                    (0 until answers.length()).joinToString(" | ") { answers.optString(it) }
+                }
+                .orEmpty()
         quizPromptInput?.setText(originalQuizPrompt)
         quizAnswersInput?.setText(originalQuizAnswers)
         quizPromptInput?.isEnabled = !item.has("quiz") || simpleTextQuestion
