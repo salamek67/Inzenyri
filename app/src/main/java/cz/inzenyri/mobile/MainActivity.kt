@@ -427,7 +427,7 @@ class MainActivity : ComponentActivity() {
         topBar.addView(lockButton, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) })
         maintainerButton =
             Button(this).apply {
-                text = if (maintainerMode) "🔑" else "🔧"
+                text = "🔧"
                 contentDescription =
                     if (maintainerMode) "GitHub maintainer účet je propojen"
                     else "Propojit maintainer účet s GitHubem"
@@ -1593,7 +1593,7 @@ class MainActivity : ComponentActivity() {
             .edit()
             .putBoolean("maintainer_mode", connected)
             .apply()
-        maintainerButton?.text = if (connected) "🔑" else "🔧"
+        maintainerButton?.text = "🔧"
         maintainerButton?.contentDescription =
             if (connected) {
                 "GitHub propojen${user?.let { " jako $it" }.orEmpty()}"
@@ -2216,7 +2216,7 @@ class MainActivity : ComponentActivity() {
             card.addView(solutionButton, margin(0, 10, 0, 0))
             card.addView(solutionContent, margin(0, 6, 0, 0))
         }
-        if (itemType(item) == "test") {
+        if (itemType(item) == "test" && PracticeQuizzes.forTest(item).isNotEmpty()) {
             card.addView(
                 button("Vybrat procvičování →") { showQuizSelection(item) },
                 margin(0, 8, 0, 0),
@@ -3464,6 +3464,7 @@ class MainActivity : ComponentActivity() {
                     pushProgressDialog?.finish(
                         "Databáze byla odeslána · ${updatedEnvelope.getString("dbVersion")}",
                     )
+                    showDashboard()
                 }
             } catch (e: Exception) {
                 val failedStep = activeStep

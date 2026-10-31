@@ -396,7 +396,7 @@ function createItem(item, index) {
     });
     article.append(button, solution);
   }
-  if (itemType(item) === "test") {
+  if (itemType(item) === "test" && practiceSets(item).length) {
     const quizButton = document.createElement("button");
     quizButton.type = "button";
     quizButton.className = "quiz-start";
