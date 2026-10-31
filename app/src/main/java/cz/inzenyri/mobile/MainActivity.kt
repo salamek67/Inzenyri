@@ -4101,6 +4101,20 @@ class MainActivity : ComponentActivity() {
                 (resources.displayMetrics.heightPixels / 3).coerceAtMost(dp(280)),
             ),
         )
+        val currentVersion = BuildConfig.VERSION_NAME.substringBefore('-')
+        content.addView(
+            button("Zobrazit celý changelog") {
+                startActivity(
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse(
+                            "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/compare/$currentVersion...$version",
+                        ),
+                    ),
+                )
+            },
+            margin(0, 0, 0, 8),
+        )
         content.addView(
             button("Aktualizovat na $version") {
                 dialog.dismiss()
