@@ -46,6 +46,7 @@ COMMANDS = (
     "password",
     "github-login",
     "github-status",
+    "pull",
     "commit",
     "bump",
     "server",
@@ -1920,6 +1921,7 @@ def help_text():
     command("password", "Změnit heslo", "bezpečně přešifrovat data")
     command("github-login", "Přihlásit GitHub", "uložit přihlášení pro tento repozitář")
     command("github-status", "GitHub účet", "ověřit přihlášení používané pro releasy")
+    command("pull", "Stáhnout změny", "načíst změny z origin/main (fast-forward)")
     command("commit [text]", "Publikovat", "commit a push na GitHub")
     command(
         "bump", "Zvýšit verzi", "lokální verze a Android tag, bez commitu a releasu"
@@ -1930,7 +1932,7 @@ def help_text():
         "lokální přidávání a úpravy položek, výchozí port 8765",
     )
     command("clear", "Vyčistit", "vyčistit obrazovku konzole")
-    command("quit", "Ukončit", "bezpečně zavřít konzoli")
+    command("quit / exit", "Ukončit", "bezpečně zavřít konzoli")
     print(f"\n  {muted('Příklady:')} add u · info 2 · edit 2 · delete 2-5\n")
     print(
         f"  {muted('Matematika:')} $a /cdot sqrt(x)^2 /aproxeq y$ · obyčejný dolar: \\$\n"
@@ -1950,6 +1952,10 @@ def dispatch(cmd, args=()):
         github_login()
     elif cmd in {"github-status", "gh-status"}:
         github_status()
+    elif cmd == "pull":
+        if args:
+            raise DataError("Příkaz pull nepřijímá argumenty.")
+        subprocess.run(["git", "pull", "--ff-only", "origin", "main"], cwd=ROOT, check=True)
     elif cmd in {"a", "add"}:
         if len(args) > 1:
             raise DataError("Příkaz add přijímá nejvýše jednu zkratku typu.")
