@@ -1146,8 +1146,16 @@ function renderQuizQuestion() {
       ? Boolean(map)
       : question.type === "fill"
         ? Boolean(fill)
-        : ["choice", "text", "punctuation"].includes(question.type)) &&
-    (question.type !== "choice" ||
+        : ["choice", "text", "article", "punctuation"].includes(question.type)) &&
+      (question.type !== "article" ||
+        (typeof question.prompt === "string" &&
+          question.prompt.trim() &&
+          Array.isArray(question.answers) &&
+          question.answers.length > 0 &&
+          question.answers.every(
+            (answer) => typeof answer === "string" && answer.trim(),
+          ))) &&
+      (question.type !== "choice" ||
       (Array.isArray(question.options) &&
         question.options.length >= 2 &&
         Number.isInteger(question.answer) &&
@@ -1226,6 +1234,7 @@ function renderQuizQuestion() {
         question.type === "punctuation"
           ? normalizePunctuationAnswer
           : normalizeWrittenAnswer,
+      ignoreCase = question.ignoreCase === true || question.type === "article",
       accepted = map
         ? map.correct()
         : fill
@@ -1233,8 +1242,7 @@ function renderQuizQuestion() {
           : written
             ? expected.some(
                 (answer) =>
-                  normalize(value, question.ignoreCase === true) ===
-                  normalize(answer, question.ignoreCase === true),
+                  normalize(value, ignoreCase) === normalize(answer, ignoreCase),
               )
             : value === question.answer;
     if (accepted) state.score++;

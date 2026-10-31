@@ -98,6 +98,8 @@ class MainActivity : ComponentActivity() {
         )
     private var quizPromptInput: EditText? = null
     private var quizAnswersInput: EditText? = null
+    private var quizArticleMode = false
+    private var quizArticleButton: Button? = null
     private var dateButton: Button? = null
     private var exportButton: Button? = null
     private var pushButton: Button? = null
@@ -520,6 +522,11 @@ class MainActivity : ComponentActivity() {
             renderAiReviewEditor()
             quizPromptInput =
                 input("Otázka (volitelné)", true).also { addView(it, margin(0, 10, 0, 0)) }
+            quizArticleButton = button("Procvičovat člen + slovo") {
+                quizArticleMode = !quizArticleMode
+                quizArticleButton?.text =
+                    if (quizArticleMode) "Typ odpovědi: člen + slovo" else "Typ odpovědi: běžný text"
+            }.also { addView(it, margin(0, 8, 0, 0)) }
             quizAnswersInput =
                 input("Správné odpovědi (odděl |)", false).also { addView(it, margin(0, 8, 0, 0)) }
             clearQuizCheckBox =
@@ -2877,7 +2884,7 @@ class MainActivity : ComponentActivity() {
                             (0 until answers.length()).any { answerIndex ->
                                 fun normalized(value: String): String {
                                     var result = value.trim()
-                                    if (question.optBoolean("ignoreCase", false))
+                                    if (question.optBoolean("ignoreCase", false) || kind == "article")
                                         result = result.lowercase(Locale.ROOT)
                                     if (kind == "punctuation")
                                         result =
@@ -3061,11 +3068,15 @@ class MainActivity : ComponentActivity() {
         originalQuizPrompt = ""
         originalQuizAnswers = ""
         originalQuizIsSimpleText = false
+        quizArticleMode = false
+        quizArticleButton?.text = "Typ odpovědi: běžný text"
         titleInput?.text?.clear()
         descriptionInput?.text?.clear()
         solutionInput?.text?.clear()
         quizPromptInput?.text?.clear()
         quizAnswersInput?.text?.clear()
+        quizArticleMode = false
+        quizArticleButton?.text = "Typ odpovědi: běžný text"
         quizPromptInput?.isEnabled = true
         quizAnswersInput?.isEnabled = true
         clearQuizCheckBox?.isChecked = false
@@ -3101,7 +3112,10 @@ class MainActivity : ComponentActivity() {
         renderAiReviewEditor()
 
         val firstQuestion = item.optJSONObject("quiz")?.optJSONArray("questions")?.optJSONObject(0)
-        val simpleTextQuestion = firstQuestion?.optString("type") == "text"
+        val simpleTextQuestion = firstQuestion?.optString("type") in setOf("text", "article")
+        quizArticleMode = firstQuestion?.optString("type") == "article"
+        quizArticleButton?.text =
+            if (quizArticleMode) "Typ odpovědi: člen + slovo" else "Typ odpovědi: běžný text"
         originalQuizIsSimpleText = simpleTextQuestion
         originalQuizPrompt = if (simpleTextQuestion) firstQuestion.optString("prompt") else ""
         originalQuizAnswers =
@@ -3227,7 +3241,7 @@ class MainActivity : ComponentActivity() {
                             JSONArray()
                                 .put(
                                     JSONObject()
-                                        .put("type", "text")
+                                        .put("type", if (quizArticleMode) "article" else "text")
                                         .put("prompt", prompt)
                                         .put("answers", JSONArray(answers))
                                         .put("ignoreCase", true),
@@ -3293,7 +3307,12 @@ class MainActivity : ComponentActivity() {
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
         val quizChanged =
-            prompt != originalQuizPrompt || answers.joinToString(" | ") != originalQuizAnswers
+            prompt != originalQuizPrompt ||
+                answers.joinToString(" | ") != originalQuizAnswers ||
+                quizArticleMode != (original.optJSONObject("quiz")
+                    ?.optJSONArray("questions")
+                    ?.optJSONObject(0)
+                    ?.optString("type") == "article")
         val removeOrReplaceQuiz = clearQuizCheckBox?.isChecked == true
         val advancedQuiz = original.has("quiz") && !originalQuizIsSimpleText
         if (removeOrReplaceQuiz && (!advancedQuiz || prompt.isBlank() && answers.isEmpty())) {
@@ -3319,7 +3338,10 @@ class MainActivity : ComponentActivity() {
                 val firstQuestion =
                     questions.optJSONObject(0)?.let { JSONObject(it.toString()) } ?: JSONObject()
                 firstQuestion
-                    .put("type", "text")
+                    .put(
+                        "type",
+                        if (firstQuestion.optString("type") == "article") "article" else "text",
+                    )
                     .put("prompt", prompt)
                     .put("answers", JSONArray(answers))
                 if (!firstQuestion.has("ignoreCase")) firstQuestion.put("ignoreCase", true)
@@ -4487,6 +4509,7 @@ class MainActivity : ComponentActivity() {
         solutionTemplateButton?.visibility = if (type == "task") View.VISIBLE else View.GONE
         aiReviewEditor?.visibility = if (type == "task") View.VISIBLE else View.GONE
         quizPromptInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
+        quizArticleButton?.visibility = if (type == "test") View.VISIBLE else View.GONE
         quizAnswersInput?.visibility = if (type == "test") View.VISIBLE else View.GONE
     }
 

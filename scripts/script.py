@@ -450,6 +450,23 @@ def normalize(value):
                     raise DataError(
                         "Kartička musí mít vyplněnou přední i zadní stranu."
                     )
+                if (
+                    isinstance(question, dict)
+                    and question.get("type") == "article"
+                    and (
+                        not isinstance(question.get("prompt"), str)
+                        or not question["prompt"].strip()
+                        or not isinstance(question.get("answers"), list)
+                        or not question["answers"]
+                        or not all(
+                            isinstance(answer, str) and answer.strip()
+                            for answer in question["answers"]
+                        )
+                    )
+                ):
+                    raise DataError(
+                        "Procvičování členů musí mít zadání a správnou odpověď."
+                    )
         if image_bytes > ITEM_IMAGE_MAX_BYTES:
             raise DataError("Obrázky jedné položky mohou mít dohromady nejvýše 6 MB.")
     return {"tasks": value["tasks"]}
@@ -817,6 +834,11 @@ def build_practice_question(number, count):
         "karticky": "flashcard",
         "kartičky": "flashcard",
         "flashcard": "flashcard",
+        "a": "article",
+        "clen": "article",
+        "člen": "article",
+        "členy": "article",
+        "article": "article",
         "m": "map",
         "mapa": "map",
         "mapy": "map",
@@ -833,7 +855,7 @@ def build_practice_question(number, count):
         "punctuation": "punctuation",
     }.get(
         ask(
-            "Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky / [k]artičky / [m]apa"
+            "Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky / [k]artičky / [m]apa / [a] člen"
         ).lower()
     )
     if not kind:
@@ -900,6 +922,21 @@ def build_practice_question(number, count):
         if not prompt.strip() or not answer.strip():
             raise DataError("Vyplň obě strany kartičky.")
         question = {"type": "flashcard", "prompt": prompt, "answer": answer}
+    elif kind == "article":
+        prompt = ask_multiline("Význam nebo překlad podstatného jména")
+        answers = [
+            value.strip()
+            for value in ask("Správné slovo včetně členu (varianty odděl |)").split("|")
+            if value.strip()
+        ]
+        if not prompt.strip() or not answers:
+            raise DataError("Vyplň význam i správné slovo s členem.")
+        question = {
+            "type": "article",
+            "prompt": prompt,
+            "answers": answers,
+            "ignoreCase": True,
+        }
     elif kind == "fill":
         prompt = ask_multiline("Zadání otázky")
         template = ask_multiline(
@@ -1307,6 +1344,10 @@ def info(index=None):
                 print(f"      Tolerance: {question.get('toleranceKm')} km")
         elif kind == "flashcard":
             print(f"      {muted('Zadní strana:')} {question.get('answer', '')}")
+        elif kind == "article":
+            print(
+                f"      {muted('Člen + slovo:')} {' | '.join(question.get('answers', []))}"
+            )
         else:
             answers = question.get("answers", [])
             if kind == "punctuation":
