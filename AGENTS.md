@@ -50,6 +50,11 @@
 - Funkce, které dávají smysl na webu i v Android aplikaci a lze je na obou
   platformách realizovat, implementuj na obou. Zachovej společný formát dat a
   kompatibilitu starších položek; omezení platformy pojmenuj.
+- Každý nový typ procvičování přidej také do místního browser editoru
+  (`scripts/editor/editor.js`) a jeho validace (`scripts/editor_server.py`),
+  kromě vykreslení a vyhodnocení na veřejném webu a v Androidu. Podpora typu
+  sama nepřidává otázky do databáze; pokud požadavek zahrnuje konkrétní obsah,
+  přidej jej také do dat.
 
 ## Struktura projektu
 
