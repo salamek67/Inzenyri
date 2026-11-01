@@ -9,6 +9,7 @@ const questionTypes = {
   text: "Textová odpověď",
   choice: "Výběr možností",
   fill: "Doplňování",
+  article: "Člen + slovíčko",
   punctuation: "Čárky ve větě",
   flashcard: "Kartička",
   map: "Zeměpisná mapa",
@@ -407,7 +408,7 @@ function newQuestion(type = "text") {
           ? { answers: [""] }
           : {}),
     ...(type === "fill" ? { template: "", numeric: false } : {}),
-    ...(["text", "fill"].includes(type) ? { ignoreCase: true } : {}),
+    ...(["text", "fill", "article"].includes(type) ? { ignoreCase: true } : {}),
   };
 }
 function renderQuizzes() {
@@ -740,7 +741,7 @@ function renderQuizzes() {
           (value) => (q.answers = lines(value)),
           { rows: 3 },
         );
-        if (["text", "fill"].includes(q.type))
+        if (["text", "fill", "article"].includes(q.type))
           check(
             card,
             "Ignorovat velikost písmen",
