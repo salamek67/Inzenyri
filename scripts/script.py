@@ -42,6 +42,7 @@ COMMANDS = (
     "list",
     "delete",
     "encrypt",
+    "decrypt",
     "init",
     "password",
     "github-login",
@@ -728,6 +729,31 @@ def encrypt_private():
     atomic_write(ENC, envelope(data, password))
     SESSION_PASSWORD = password
     success("Data byla zašifrována uloženým heslem.")
+
+
+def decrypt_encrypted_file():
+    global SESSION_PASSWORD
+    if PRIVATE.exists() and ask(
+        "Přepsat existující private/data.private.json? [a/n]"
+    ).lower() not in {"a", "ano"}:
+        raise DataError("Odšifrování bylo zrušeno; místní data zůstala zachována.")
+    encrypted = read(ENC)
+    password = SESSION_PASSWORD or load_password()
+    if password:
+        try:
+            data = decrypt(encrypted, password)
+        except DataError:
+            SESSION_PASSWORD = None
+            if PASSWORD_FILE.exists():
+                PASSWORD_FILE.unlink()
+            password = None
+    if not password:
+        password = secret("Heslo k datům")
+        data = decrypt(encrypted, password)
+    atomic_write(PRIVATE, data)
+    SESSION_PASSWORD = password
+    save_password(password)
+    success("Data byla odšifrována do private/data.private.json.")
 
 
 def change_password():
@@ -2008,6 +2034,7 @@ def help_text():
     command("list", "Přehled", "vypsat aktuální položky")
     command("delete [id…]", "Smazat", "odstranit indexy nebo rozsahy")
     command("encrypt", "Zašifrovat", "použít uložené heslo")
+    command("decrypt", "Odšifrovat", "uložit plaintext do private/data.private.json")
     command("init", "První nastavení", "vytvořit nové heslo a data")
     command("password", "Změnit heslo", "bezpečně přešifrovat data")
     command("github-login", "Přihlásit GitHub", "uložit přihlášení pro tento repozitář")
@@ -2035,6 +2062,10 @@ def dispatch(cmd, args=()):
     cmd = cmd.lower()
     if cmd == "encrypt":
         encrypt_private()
+    elif cmd == "decrypt":
+        if args:
+            raise DataError("Příkaz decrypt nepřijímá argumenty.")
+        decrypt_encrypted_file()
     elif cmd == "init":
         initialize_private()
     elif cmd in {"password", "passwd", "change-password"}:
