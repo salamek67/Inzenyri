@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = Path(__file__).resolve().parent / "editor"
-SERVER_VERSION = "1.2.2"
+SERVER_VERSION = "1.2.3"
 
 
 class EditorError(Exception):
@@ -36,7 +36,10 @@ class Database:
         self.password = self.manager["load_password"]() if root == ROOT else None
         self.lock = threading.RLock()
         self.repository = Repository(
-            root, self.manager["COMMIT_PATHS"], self.manager["next_db_version"]
+            root,
+            self.manager["COMMIT_PATHS"],
+            self.manager["next_db_version"],
+            self.manager["infer_commit_prefix"],
         )
 
     def snapshot(self):
@@ -291,10 +294,11 @@ class Database:
 class Repository:
     """Local commits limited to the same project paths as the CLI manager."""
 
-    def __init__(self, root, paths, next_db_version):
+    def __init__(self, root, paths, next_db_version, infer_commit_prefix):
         self.root = root.resolve()
         self.paths = paths
         self.next_db_version = next_db_version
+        self.infer_commit_prefix = infer_commit_prefix
 
     def git(self, *args):
         try:
@@ -402,6 +406,8 @@ class Repository:
         if not preview["files"]:
             raise EditorError("Žádné projektové změny k commitnutí.")
         files = preview["files"]
+        if not message.lstrip().lower().startswith(("[app skip]", "[page skip]", "[ci skip]")):
+            message = self.infer_commit_prefix(files) + message.strip()
         self.git("diff", "--check", "--", *files)
         self.git("add", "-A", "--", *files)
         if self.preview()["revision"] != preview["revision"]:
