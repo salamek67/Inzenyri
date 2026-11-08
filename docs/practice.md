@@ -2,6 +2,21 @@
 
 Ke všem typům lze přidat [obrázek uložený v šifrované databázi](images.md).
 
+## Three forms of verbs
+
+Typ `verb-forms` procvičuje infinitiv, past simple a past participle v jedné
+otázce. Žák doplní všechny tři tvary; správné musí být všechny, bez ohledu na
+velikost písmen. Typ funguje na webu i v Androidu a otázky vytvoříš v lokálním
+editoru nebo v Python správci volbou `[3] tvary slovesa`.
+
+```json
+{
+  "type": "verb-forms",
+  "prompt": "jít",
+  "forms": ["go", "went", "gone"]
+}
+```
+
 ## Zeměpisné mapy
 
 Typ `map` umožňuje označit více států/území nebo umístit špendlík s tolerancí v

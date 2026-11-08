@@ -469,6 +469,23 @@ def normalize(value):
                     raise DataError(
                         "Procvičování členů musí mít zadání a správnou odpověď."
                     )
+                if (
+                    isinstance(question, dict)
+                    and question.get("type") == "verb-forms"
+                    and (
+                        not isinstance(question.get("prompt"), str)
+                        or not question["prompt"].strip()
+                        or not isinstance(question.get("forms"), list)
+                        or len(question["forms"]) != 3
+                        or not all(
+                            isinstance(form, str) and form.strip()
+                            for form in question["forms"]
+                        )
+                    )
+                ):
+                    raise DataError(
+                        "Three forms of verbs musí obsahovat zadání a tři tvary slovesa."
+                    )
         if image_bytes > ITEM_IMAGE_MAX_BYTES:
             raise DataError("Obrázky jedné položky mohou mít dohromady nejvýše 6 MB.")
     return {"tasks": value["tasks"]}
@@ -848,7 +865,7 @@ def ask_number(prompt, minimum=1, maximum=None, default=None):
 def build_practice_question(number, count):
     heading(
         f"Otázka {number} z {count}",
-        "Výběr, textová odpověď, doplňování, čárky nebo kartičky",
+        "Výběr, text, doplňování, tři tvary slovesa, čárky nebo kartičky",
     )
     kind = {
         "v": "choice",
@@ -880,9 +897,12 @@ def build_practice_question(number, count):
         "čárky": "punctuation",
         "interpunkce": "punctuation",
         "punctuation": "punctuation",
+        "3": "verb-forms",
+        "v3": "verb-forms",
+        "verb-forms": "verb-forms",
     }.get(
         ask(
-            "Typ [v]ýběr / [t]ext / [d]oplňování / [č]árky / [k]artičky / [m]apa / [a] člen"
+            "Typ [v]ýběr / [t]ext / [d]oplňování / [3] tvary slovesa / [č]árky / [k]artičky / [m]apa / [a] člen"
         ).lower()
     )
     if not kind:
@@ -964,6 +984,15 @@ def build_practice_question(number, count):
             "answers": answers,
             "ignoreCase": True,
         }
+    elif kind == "verb-forms":
+        prompt = ask_multiline("Zadání nebo význam slovesa")
+        forms = [
+            ask(label).strip()
+            for label in ("Infinitive", "Past simple", "Past participle")
+        ]
+        if not prompt.strip() or any(not form for form in forms):
+            raise DataError("Vyplň zadání a všechny tři tvary slovesa.")
+        question = {"type": kind, "prompt": prompt, "forms": forms}
     elif kind == "fill":
         prompt = ask_multiline("Zadání otázky")
         template = ask_multiline(
@@ -1375,6 +1404,8 @@ def info(index=None):
             print(
                 f"      {muted('Člen + slovo:')} {' | '.join(question.get('answers', []))}"
             )
+        elif kind == "verb-forms":
+            print(f"      {muted('Tři tvary:')} {' · '.join(question.get('forms', []))}")
         else:
             answers = question.get("answers", [])
             if kind == "punctuation":
@@ -1628,23 +1659,6 @@ def committed_android_version():
     if not match:
         raise DataError("V HEAD chybí výchozí verze Android aplikace.")
     return match.group(1)
-
-
-def latest_android_tag(before=None):
-    tags = subprocess.run(
-        ["git", "tag", "--list"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.splitlines()
-    versions = [
-        tag
-        for tag in tags
-        if re.fullmatch(r"\d+\.\d+\.\d+", tag)
-        and (before is None or tuple(map(int, tag.split("."))) < before)
-    ]
-    return max(versions, key=lambda tag: tuple(map(int, tag.split("."))), default=None)
 
 
 def offer_android_version_bump(*, release=True, create_tag=False):
@@ -1942,13 +1956,6 @@ def commit(message=None):
         if working_tuple > committed_tuple:
             android_previous_version = previous_android_version
             android_bump = working_android_version
-        elif not subprocess.run(
-            ["git", "show-ref", "--verify", "--quiet", f"refs/tags/{working_android_version}"],
-            cwd=ROOT,
-        ).returncode:
-            android_previous_version = latest_android_tag(working_tuple)
-            if android_previous_version:
-                android_bump = working_android_version
         else:
             android_bump_result = offer_android_version_bump()
             if android_bump_result:

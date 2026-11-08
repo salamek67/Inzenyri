@@ -816,6 +816,13 @@ input:-webkit-autofill {
   color: var(--text);
   background: var(--solid);
 }
+.verb-form-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
 .quiz-flashcard {
   margin-top: 18px;
   padding: 24px;

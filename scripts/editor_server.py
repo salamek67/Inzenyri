@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = Path(__file__).resolve().parent / "editor"
-SERVER_VERSION = "1.2.4"
+SERVER_VERSION = "1.3.0"
 
 
 class EditorError(Exception):
@@ -194,6 +194,16 @@ class Database:
                     )
                 elif kind in {"text", "article"}:
                     valid = text("prompt") and answers()
+                elif kind == "verb-forms":
+                    forms = q.get("forms")
+                    valid = (
+                        text("prompt")
+                        and isinstance(forms, list)
+                        and len(forms) == 3
+                        and all(
+                            isinstance(form, str) and form.strip() for form in forms
+                        )
+                    )
                 elif kind == "flashcard":
                     valid = text("prompt") and text("answer")
                 elif kind == "fill":

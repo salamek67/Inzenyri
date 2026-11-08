@@ -16,7 +16,7 @@ function writePreference(name, value) {
 }
 
 const ENCRYPTED_DATA_URL = "data.enc.json";
-const PAGE_VERSION = "2.9.0";
+const PAGE_VERSION = "2.10.0";
 const FORMAT_NAME = "inzenyri-encrypted-data";
 const FORMAT_VERSION = 1;
 const DONE_STORAGE_KEY = "inzenyri:done-items:v1";
@@ -1015,7 +1015,7 @@ function renderQuizQuestion() {
     if (failed.length)
       root.append(
         quizAction(`Zopakovat chybné a přeskočené (${failed.length})`, () =>
-          restart(failed),
+          restart(state.shuffle ? shuffledQuestions(failed) : failed),
         ),
       );
     root.append(
@@ -1141,12 +1141,21 @@ function renderQuizQuestion() {
   }
   const fill = question.type === "fill" ? FillInQuiz.create(question) : null;
   const map = question.type === "map" ? MapQuiz.create(question) : null;
+  const verbForms = question.type === "verb-forms" ? question.forms : null;
   const valid =
     (question.type === "map"
       ? Boolean(map)
       : question.type === "fill"
         ? Boolean(fill)
-        : ["choice", "text", "article", "punctuation"].includes(question.type)) &&
+        : ["choice", "text", "article", "punctuation", "verb-forms"].includes(
+            question.type,
+          )) &&
+      (question.type !== "verb-forms" ||
+        (typeof question.prompt === "string" &&
+          question.prompt.trim() &&
+          Array.isArray(verbForms) &&
+          verbForms.length === 3 &&
+          verbForms.every((form) => typeof form === "string" && form.trim()))) &&
       (question.type !== "article" ||
         (typeof question.prompt === "string" &&
           question.prompt.trim() &&
@@ -1188,6 +1197,26 @@ function renderQuizQuestion() {
       label.append(radio, text);
       answers.append(label);
     });
+  } else if (question.type === "verb-forms") {
+    if (image) answers.append(image);
+    for (const [index, label] of [
+      "Infinitive",
+      "Past simple",
+      "Past participle",
+    ].entries()) {
+      const field = document.createElement("label"),
+        caption = document.createElement("span"),
+        input = document.createElement("input");
+      field.className = "verb-form-field";
+      caption.textContent = label;
+      input.className = "quiz-text";
+      input.name = `verbForm${index}`;
+      input.type = "text";
+      input.required = true;
+      input.autocomplete = "off";
+      field.append(caption, input);
+      answers.append(field);
+    }
   } else if (fill) {
     if (image) answers.append(image);
     answers.append(fill.element);
@@ -1230,21 +1259,33 @@ function renderQuizQuestion() {
       expected = Array.isArray(question.answers)
         ? question.answers
         : [question.answer],
+      submittedForms =
+        question.type === "verb-forms"
+          ? [0, 1, 2].map((index) => data.get(`verbForm${index}`))
+          : null,
       normalize =
         question.type === "punctuation"
           ? normalizePunctuationAnswer
           : normalizeWrittenAnswer,
       ignoreCase = question.ignoreCase === true || question.type === "article",
-      accepted = map
-        ? map.correct()
-        : fill
-          ? fill.correct()
-          : written
-            ? expected.some(
-                (answer) =>
-                  normalize(value, ignoreCase) === normalize(answer, ignoreCase),
-              )
-            : value === question.answer;
+      accepted =
+        question.type === "verb-forms"
+          ? question.forms.every(
+              (answer, index) =>
+                normalizeWrittenAnswer(submittedForms[index], true) ===
+                normalizeWrittenAnswer(answer, true),
+            )
+          : map
+            ? map.correct()
+            : fill
+              ? fill.correct()
+              : written
+                ? expected.some(
+                    (answer) =>
+                      normalize(value, ignoreCase) ===
+                      normalize(answer, ignoreCase),
+                  )
+                : value === question.answer;
     if (accepted) state.score++;
     saveOutcome(accepted ? 1 : 0);
     form
@@ -1260,7 +1301,17 @@ function renderQuizQuestion() {
       const correct = document.createElement("p");
       renderFormattedText(
         correct,
-        `Správná odpověď: ${map ? map.solution() : fill ? fill.solution : written ? expected.join(" / ") : question.options[question.answer]}`,
+        `Správná odpověď: ${
+          question.type === "verb-forms"
+            ? question.forms.join(" · ")
+            : map
+              ? map.solution()
+              : fill
+                ? fill.solution
+                : written
+                  ? expected.join(" / ")
+                  : question.options[question.answer]
+        }`,
       );
       feedback.append(correct);
     }

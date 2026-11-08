@@ -13,6 +13,7 @@ const questionTypes = {
   punctuation: "Čárky ve větě",
   flashcard: "Kartička",
   map: "Zeměpisná mapa",
+  "verb-forms": "Three forms of verbs",
 };
 const state = {
   tasks: [],
@@ -449,15 +450,19 @@ function newQuestion(type = "text") {
     ...(type === "punctuation"
       ? { sentence: "", answers: [""] }
       : { prompt: "" }),
-    ...(type === "choice"
-      ? { options: ["", ""], answer: 0 }
-      : type === "flashcard"
-        ? { answer: "" }
-        : type !== "punctuation"
-          ? { answers: [""] }
-          : {}),
+    ...(type === "verb-forms"
+      ? { forms: ["", "", ""] }
+      : type === "choice"
+        ? { options: ["", ""], answer: 0 }
+        : type === "flashcard"
+          ? { answer: "" }
+          : type !== "punctuation"
+            ? { answers: [""] }
+            : {}),
     ...(type === "fill" ? { template: "", numeric: false } : {}),
-    ...(["text", "fill", "article"].includes(type) ? { ignoreCase: true } : {}),
+    ...(["text", "fill", "article"].includes(type)
+      ? { ignoreCase: true }
+      : {}),
   };
 }
 function renderQuizzes() {
@@ -528,7 +533,8 @@ function renderQuizzes() {
           (typeof q.answer === "string" && q.answer.trim()) ||
             q.template?.trim() ||
             q.options?.some((value) => value.trim()) ||
-            q.answers?.some((value) => value.trim()),
+            q.answers?.some((value) => value.trim()) ||
+            q.forms?.some((value) => value.trim()),
         );
         if (
           !hasAnswers ||
@@ -728,6 +734,18 @@ function renderQuizzes() {
         }
         card.append(mapRoot, selection);
         drawMap();
+      } else if (q.type === "verb-forms") {
+        const labels = ["Infinitive", "Past simple", "Past participle"];
+        q.forms ||= ["", "", ""];
+        labels.forEach((label, index) =>
+          field(
+            card,
+            label,
+            q.forms[index],
+            (value) => (q.forms[index] = value),
+            { single: true },
+          ),
+        );
       } else if (q.type === "flashcard")
         field(card, "Zadní strana", q.answer, (value) => (q.answer = value));
       else if (q.type === "choice") {
@@ -904,6 +922,8 @@ function renderPreview() {
           answer,
           q.type === "flashcard"
             ? q.answer
+            : q.type === "verb-forms"
+              ? (q.forms || []).join(" · ")
             : Array.isArray(q.answers)
               ? q.answers.join(" / ")
               : q.answer || "",

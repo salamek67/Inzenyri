@@ -2558,7 +2558,8 @@ class MainActivity : ComponentActivity() {
                 if (remaining.isNotEmpty()) {
                     result.addView(
                         button("Zopakovat chybné a přeskočené (${remaining.size})") {
-                            questionOrder = remaining
+                            questionOrder =
+                                if (quiz.optBoolean("shuffle")) remaining.shuffled() else remaining
                             failedQuestions.clear()
                             index = 0
                             score = 0
@@ -2676,6 +2677,13 @@ class MainActivity : ComponentActivity() {
                         question
                             .optJSONArray("options")
                             ?.optString(question.optInt("answer", -1))
+                            .orEmpty()
+                    } else if (kind == "verb-forms") {
+                        question
+                            .optJSONArray("forms")
+                            ?.let { forms ->
+                                (0 until forms.length()).joinToString(" · ") { forms.optString(it) }
+                            }
                             .orEmpty()
                     } else {
                         question.optJSONArray("answers")?.let { answers ->
@@ -2825,6 +2833,49 @@ class MainActivity : ComponentActivity() {
                             muted,
                             false,
                         ),
+                    )
+                }
+            } else if (kind == "verb-forms") {
+                val forms = question.optJSONArray("forms")
+                if (
+                    forms == null ||
+                        forms.length() != 3 ||
+                        (0 until 3).any { forms.optString(it).isBlank() }
+                ) {
+                    body.addView(
+                        label(
+                            "Neplatné zadání tří tvarů slovesa. Můžeš otázku přeskočit.",
+                            15,
+                            muted,
+                            false,
+                        ),
+                    )
+                } else {
+                    val labels = listOf("Infinitive", "Past simple", "Past participle")
+                    val fields = labels.map { input(it, false) }
+                    labels.forEachIndexed { fieldIndex, fieldLabel ->
+                        body.addView(label(fieldLabel, 13, muted, true), margin(0, 0, 0, 4))
+                        body.addView(fields[fieldIndex], margin(0, 0, 0, 12))
+                    }
+                    footer.addView(
+                        button("Vyhodnotit") {
+                            val values = fields.map { it.text.toString().trim() }
+                            val emptyIndex = values.indexOfFirst { it.isEmpty() }
+                            if (emptyIndex >= 0) {
+                                fields[emptyIndex].error = "Doplň tento tvar"
+                                fields[emptyIndex].requestFocus()
+                            } else {
+                                showFeedback(
+                                    values.indices.all {
+                                        values[it].equals(
+                                            forms.optString(it).trim(),
+                                            ignoreCase = true,
+                                        )
+                                    },
+                                )
+                            }
+                        },
+                        LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) },
                     )
                 }
             } else if (kind == "fill") {
