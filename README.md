@@ -9,6 +9,8 @@ Android závislostí.
 
 Pro vlastní nasazení začni [návodem krok za krokem](docs/tutorial.md).
 
+_[Webová stránka](https://salamek67.github.io/Inzenyri) z github workflows_
+
 ## Složky
 
 - `app/` — Android aplikace, Kotlin zdroje a Gradle konfigurace.
