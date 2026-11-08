@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = Path(__file__).resolve().parent / "editor"
-SERVER_VERSION = "1.2.1"
+SERVER_VERSION = "1.2.2"
 
 
 class EditorError(Exception):
@@ -62,6 +62,59 @@ class Database:
                 409,
             )
         return data, revision, json.loads(encrypted).get("dbVersion", "neuvedena")
+
+    def conflict(self):
+        if not self.password:
+            raise EditorError("Odemkni databázi jejím heslem.", 401)
+        private, encrypted, revision = self.snapshot()
+        try:
+            left = self.manager["normalize"](json.loads(private))
+            right = self.manager["normalize"](
+                self.manager["decrypt"](json.loads(encrypted), self.password)
+            )
+        except self.manager["DataError"] as exc:
+            raise EditorError(str(exc), 401) from exc
+        left_items = {item["id"]: item for item in left["tasks"]}
+        right_items = {item["id"]: item for item in right["tasks"]}
+        return revision, left_items, right_items
+
+    def resolve_conflict(self, payload):
+        with self.lock:
+            revision, left, right = self.conflict()
+            if payload.get("revision") != revision:
+                raise EditorError("Databáze se mezitím změnila. Načti rozdíly znovu.", 409)
+            choices = payload.get("choices")
+            if not isinstance(choices, dict):
+                raise EditorError("Vyber verzi každé odlišné položky.")
+            merged = {**left}
+            for item_id in left.keys() | right.keys():
+                a, b = left.get(item_id), right.get(item_id)
+                if a == b:
+                    continue
+                choice = choices.get(item_id)
+                if choice == "private":
+                    if a is None:
+                        merged.pop(item_id, None)
+                    else:
+                        merged[item_id] = a
+                elif choice == "encrypted":
+                    if b is None:
+                        merged.pop(item_id, None)
+                    else:
+                        merged[item_id] = b
+                else:
+                    raise EditorError("Vyber verzi každé odlišné položky.")
+            data = self.manager["normalize"]({"tasks": list(merged.values())})
+            version = json.loads(self.encrypted.read_bytes()).get("dbVersion")
+            old_private, old_encrypted = json.loads(self.private.read_bytes()), json.loads(self.encrypted.read_bytes())
+            try:
+                self.manager["atomic_write"](self.private, data)
+                self.manager["atomic_write"](self.encrypted, self.manager["envelope"](data, self.password, version))
+            except Exception:
+                self.manager["atomic_write"](self.private, old_private)
+                self.manager["atomic_write"](self.encrypted, old_encrypted)
+                raise
+            return self.state()
 
     def validate(self, item):
         if not isinstance(item, dict):
@@ -394,6 +447,10 @@ class EditorHandler(BaseHTTPRequestHandler):
                 with self.server.database.lock:
                     if not post and path == "/api/state":
                         return self.send(200, self.server.database.state())
+                    if not post and path == "/api/conflict":
+                        revision, private, encrypted = self.server.database.conflict()
+                        ids = private.keys() | encrypted.keys()
+                        return self.send(200, {"revision": revision, "items": [{"id": key, "private": private.get(key), "encrypted": encrypted.get(key)} for key in ids if private.get(key) != encrypted.get(key)]})
                     if not post and path == "/api/git":
                         self.server.database.read()
                         return self.send(200, self.server.database.repository.preview())
@@ -423,6 +480,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                                 self.server.database.password = previous
                                 raise
                             return self.send(200, state)
+                        if path == "/api/conflict":
+                            return self.send(200, self.server.database.resolve_conflict(payload))
                         if path == "/api/commit":
                             self.server.database.read()
                             return self.send(

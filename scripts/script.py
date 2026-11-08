@@ -4,6 +4,7 @@ import copy
 import math
 import base64, getpass, hashlib, json, os, shlex, subprocess, sys, tempfile, uuid
 import re
+import threading
 from datetime import date, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -2189,6 +2190,13 @@ def main():
 
 
 if __name__ == "__main__":
+    def check_repository_in_background():
+        try:
+            ensure_repository_up_to_date()
+        except Exception as exc:
+            print(f"\n  Kontrola origin/main selhala: {exc}", file=sys.stderr, flush=True)
+
+    threading.Thread(target=check_repository_in_background, daemon=True).start()
     try:
         main()
     except DataError as exc:

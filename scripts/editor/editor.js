@@ -39,6 +39,7 @@ document.body.classList.toggle(
 );
 let toastTimer,
   fieldIndex = 0;
+let conflictRevision = "";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -203,6 +204,32 @@ async function load() {
     $("unlock-form").hidden = error.status !== 401;
     $("gate-retry").hidden = error.status === 401;
     $("connection").textContent = "Čekám na databázi";
+    $("conflict-resolver").hidden = error.status !== 409;
+    if (error.status === 409) {
+      try {
+        const conflict = await api("/api/conflict");
+        conflictRevision = conflict.revision;
+        const list = $("conflict-items");
+        list.replaceChildren();
+        for (const item of conflict.items) {
+          const row = el("details", "preview-question");
+          row.append(el("summary", "", `${item.private?.name || item.encrypted?.name || item.id} · ${item.private?.date || item.encrypted?.date || ""}`));
+          for (const [side, label] of [["private", "Privátní databáze"], ["encrypted", "Šifrovaná databáze"]]) {
+            const option = el("label", "field", label);
+            const radio = document.createElement("input");
+            radio.type = "radio";
+            radio.name = `conflict-${item.id}`;
+            radio.value = side;
+            radio.required = true;
+            option.append(radio, el("pre", "", JSON.stringify(item[side] ?? "Položka byla smazána", null, 2)));
+            row.append(option);
+          }
+          list.append(row);
+        }
+      } catch (conflictError) {
+        $("gate-error").textContent = conflictError.message;
+      }
+    }
   }
 }
 function renderFilters() {
@@ -1119,6 +1146,15 @@ $("unlock-form").addEventListener("submit", async (event) => {
   }
 });
 $("gate-retry").addEventListener("click", load);
+$("conflict-save").addEventListener("click", async () => {
+  const choices = Object.fromEntries([...$("conflict-items").querySelectorAll("input:checked")].map((input) => [input.name.slice(9), input.value]));
+  try {
+    applyData(await api("/api/conflict", { revision: conflictRevision, choices }));
+    notify("Databáze byly sjednoceny.");
+  } catch (error) {
+    $("gate-error").textContent = error.message;
+  }
+});
 document.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;
   if (event.key.toLowerCase() === "s") {
