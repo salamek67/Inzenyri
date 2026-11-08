@@ -1045,6 +1045,8 @@ $("git-form").addEventListener("submit", async (event) => {
     $("git-dialog").close();
     $("git-message").value = "";
     $("open-commit").title = `Poslední commit: ${result.commit}`;
+    if (result.dbVersion)
+      $("connection").textContent = `DB ${result.dbVersion} · připojeno`;
     notify(`Commit ${result.commit} vytvořen na větvi ${result.branch}.`);
     gitPreview = null;
   } catch (error) {

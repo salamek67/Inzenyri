@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = Path(__file__).resolve().parent / "editor"
-SERVER_VERSION = "1.2.3"
+SERVER_VERSION = "1.2.4"
 
 
 class EditorError(Exception):
@@ -40,7 +40,17 @@ class Database:
             self.manager["COMMIT_PATHS"],
             self.manager["next_db_version"],
             self.manager["infer_commit_prefix"],
+            self.prepare_database_commit,
         )
+
+    def prepare_database_commit(self, version):
+        data, _, _ = self.read()
+        try:
+            self.manager["atomic_write"](
+                self.encrypted, self.manager["envelope"](data, self.password, version)
+            )
+        except OSError as exc:
+            raise EditorError("Novou verzi DB se nepodařilo bezpečně uložit.") from exc
 
     def snapshot(self):
         try:
@@ -294,11 +304,14 @@ class Database:
 class Repository:
     """Local commits limited to the same project paths as the CLI manager."""
 
-    def __init__(self, root, paths, next_db_version, infer_commit_prefix):
+    def __init__(
+        self, root, paths, next_db_version, infer_commit_prefix, prepare_database_commit
+    ):
         self.root = root.resolve()
         self.paths = paths
         self.next_db_version = next_db_version
         self.infer_commit_prefix = infer_commit_prefix
+        self.prepare_database_commit = prepare_database_commit
 
     def git(self, *args):
         try:
@@ -377,13 +390,15 @@ class Repository:
                 raise EditorError(
                     "Soubory se změnily nebo je nelze přečíst. Načti nový přehled.", 409
                 ) from exc
+        next_db_version = self.next_db_version() if "data.enc.json" in files else None
         return {
             "files": files,
             "excluded": len(names) - len(files),
             "branch": branch,
             "revision": digest.hexdigest(),
+            "nextDbVersion": next_db_version,
             "suggestedMessage": (
-                f"Update DB {self.next_db_version()}"
+                f"Update DB {next_db_version}"
                 if files == ["data.enc.json"]
                 else ""
             ),
@@ -406,9 +421,16 @@ class Repository:
         if not preview["files"]:
             raise EditorError("Žádné projektové změny k commitnutí.")
         files = preview["files"]
-        if not message.lstrip().lower().startswith(("[app skip]", "[page skip]", "[ci skip]")):
+        db_version = None
+        if not message.lstrip().lower().startswith(
+            ("[app skip]", "[page skip]", "[ci skip]")
+        ):
             message = self.infer_commit_prefix(files) + message.strip()
         self.git("diff", "--check", "--", *files)
+        if "data.enc.json" in files:
+            db_version = preview["nextDbVersion"]
+            self.prepare_database_commit(db_version)
+            preview = self.preview()
         self.git("add", "-A", "--", *files)
         if self.preview()["revision"] != preview["revision"]:
             raise EditorError(
@@ -421,6 +443,7 @@ class Repository:
             "commit": self.git("rev-parse", "--short", "HEAD").decode().strip(),
             "branch": preview["branch"],
             "files": files,
+            "dbVersion": db_version,
         }
 
 
