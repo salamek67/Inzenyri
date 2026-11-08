@@ -977,6 +977,7 @@ async function save(event) {
 }
 
 let gitPreview = null;
+let gitSuggestedMessage = "";
 function gitBusy(busy) {
   state.busy = busy;
   updateSaveState();
@@ -992,6 +993,10 @@ async function refreshGit() {
   $("git-files").replaceChildren();
   try {
     gitPreview = await api("/api/git");
+    const message = $("git-message");
+    if (!message.value || message.value === gitSuggestedMessage)
+      message.value = gitPreview.suggestedMessage || "";
+    gitSuggestedMessage = gitPreview.suggestedMessage || "";
     $("git-summary").textContent =
       `Větev ${gitPreview.branch} · souborů ke commitu: ${gitPreview.files.length}.` +
       (gitPreview.excluded

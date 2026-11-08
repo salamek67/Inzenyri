@@ -35,7 +35,9 @@ class Database:
         self.encrypted = root / "data.enc.json"
         self.password = self.manager["load_password"]() if root == ROOT else None
         self.lock = threading.RLock()
-        self.repository = Repository(root, self.manager["COMMIT_PATHS"])
+        self.repository = Repository(
+            root, self.manager["COMMIT_PATHS"], self.manager["next_db_version"]
+        )
 
     def snapshot(self):
         try:
@@ -289,9 +291,10 @@ class Database:
 class Repository:
     """Local commits limited to the same project paths as the CLI manager."""
 
-    def __init__(self, root, paths):
+    def __init__(self, root, paths, next_db_version):
         self.root = root.resolve()
         self.paths = paths
+        self.next_db_version = next_db_version
 
     def git(self, *args):
         try:
@@ -375,6 +378,11 @@ class Repository:
             "excluded": len(names) - len(files),
             "branch": branch,
             "revision": digest.hexdigest(),
+            "suggestedMessage": (
+                f"Update DB {self.next_db_version()}"
+                if files == ["data.enc.json"]
+                else ""
+            ),
         }
 
     def commit(self, payload):
