@@ -1001,7 +1001,7 @@ let gitSuggestedMessage = "";
 function gitBusy(busy) {
   state.busy = busy;
   updateSaveState();
-  for (const id of ["git-refresh", "git-cancel", "git-message"])
+  for (const id of ["git-refresh", "git-cancel", "git-message", "git-push"])
     $(id).disabled = busy;
   $("git-submit").disabled = busy || !gitPreview?.files.length;
 }
@@ -1061,13 +1061,19 @@ $("git-form").addEventListener("submit", async (event) => {
     const result = await api("/api/commit", {
       revision: gitPreview.revision,
       message: $("git-message").value,
+      push: $("git-push").checked,
     });
     $("git-dialog").close();
     $("git-message").value = "";
     $("open-commit").title = `Poslední commit: ${result.commit}`;
     if (result.dbVersion)
       $("connection").textContent = `DB ${result.dbVersion} · připojeno`;
-    notify(`Commit ${result.commit} vytvořen na větvi ${result.branch}.`);
+    notify(
+      result.pushError
+        ? `Commit ${result.commit} je lokální; push selhal: ${result.pushError}`
+        : `Commit ${result.commit} vytvořen na větvi ${result.branch}${result.pushed ? " a pushnut na origin" : ""}.`,
+      Boolean(result.pushError),
+    );
     gitPreview = null;
   } catch (error) {
     gitPreview = null;

@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = Path(__file__).resolve().parent / "editor"
-SERVER_VERSION = "1.3.0"
+SERVER_VERSION = "1.3.1"
 
 
 class EditorError(Exception):
@@ -416,6 +416,9 @@ class Repository:
 
     def commit(self, payload):
         message = payload.get("message")
+        push = payload.get("push", False)
+        if not isinstance(push, bool):
+            raise EditorError("Volba push musí být pravdivá/nepravdivá hodnota.")
         if (
             not isinstance(message, str)
             or not 1 <= len(message.strip()) <= 2000
@@ -449,11 +452,19 @@ class Repository:
             )
         # --only prevents unrelated pre-staged files from entering this commit.
         self.git("commit", "--only", "-m", message.strip(), "--", *files)
+        push_error = None
+        if push:
+            try:
+                self.git("push", "--set-upstream", "origin", preview["branch"])
+            except EditorError as exc:
+                push_error = str(exc)
         return {
             "commit": self.git("rev-parse", "--short", "HEAD").decode().strip(),
             "branch": preview["branch"],
             "files": files,
             "dbVersion": db_version,
+            "pushed": push and push_error is None,
+            "pushError": push_error,
         }
 
 

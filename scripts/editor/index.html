@@ -253,8 +253,8 @@
       <form id="git-form">
         <h2 id="git-title">Commit změn</h2>
         <p>
-          Vytvoří lokální commit uložených změn projektu. Verze, tagy ani GitHub
-          se tím nemění.
+          Vytvoří commit uložených změn projektu. Volitelně pushne aktuální větev
+          na origin; verze ani tagy se tím nemění.
         </p>
         <p id="git-summary" role="status">Načítám změny…</p>
         <ul id="git-files" class="git-files"></ul>
@@ -267,6 +267,10 @@
             required
             placeholder="Např. Doplnit testy na příští týden"
           ></textarea>
+        </label>
+        <label class="inline-check">
+          <input id="git-push" type="checkbox" />
+          Po vytvoření pushnout aktuální větev na origin
         </label>
         <p id="git-error" class="error" role="alert"></p>
         <button id="git-refresh" type="button" class="secondary">
