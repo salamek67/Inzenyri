@@ -205,6 +205,7 @@ async function load() {
     $("gate-retry").hidden = error.status === 401;
     $("connection").textContent = "Čekám na databázi";
     $("conflict-resolver").hidden = error.status !== 409;
+    $("gate").classList.toggle("has-conflicts", error.status === 409);
     if (error.status === 409) {
       try {
         const conflict = await api("/api/conflict");
@@ -212,18 +213,39 @@ async function load() {
         const list = $("conflict-items");
         list.replaceChildren();
         for (const item of conflict.items) {
-          const row = el("details", "preview-question");
-          row.append(el("summary", "", `${item.private?.name || item.encrypted?.name || item.id} · ${item.private?.date || item.encrypted?.date || ""}`));
+          const row = el("details", "conflict-card");
+          row.open = true;
+          const heading = el("summary", "conflict-heading");
+          heading.append(el("strong", "", item.private?.name || item.encrypted?.name || "Položka byla smazána"), el("small", "", `${item.private?.date || item.encrypted?.date || ""} · ID ${item.id}`));
+          row.append(heading);
+          const versions = el("div", "conflict-versions");
           for (const [side, label] of [["private", "Privátní databáze"], ["encrypted", "Šifrovaná databáze"]]) {
-            const option = el("label", "field", label);
+            const option = el("label", "conflict-option");
+            option.tabIndex = 0;
+            option.setAttribute("role", "radio");
+            option.setAttribute("aria-checked", "false");
             const radio = document.createElement("input");
             radio.type = "radio";
             radio.name = `conflict-${item.id}`;
             radio.value = side;
             radio.required = true;
-            option.append(radio, el("pre", "", JSON.stringify(item[side] ?? "Položka byla smazána", null, 2)));
-            row.append(option);
+            radio.tabIndex = -1;
+            radio.addEventListener("change", () => {
+              for (const card of versions.children) {
+                const selected = card === option;
+                card.classList.toggle("selected", selected);
+                card.classList.toggle("rejected", !selected);
+                card.setAttribute("aria-checked", String(selected));
+              }
+            });
+            option.append(radio, el("strong", "", label), el("pre", "", item[side] ? JSON.stringify(item[side], null, 2) : "Položka v této databázi chybí (smazána)."));
+            option.addEventListener("click", () => { radio.checked = true; radio.dispatchEvent(new Event("change")); });
+            option.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" || event.key === " ") { event.preventDefault(); option.click(); }
+            });
+            versions.append(option);
           }
+          row.append(versions);
           list.append(row);
         }
       } catch (conflictError) {
